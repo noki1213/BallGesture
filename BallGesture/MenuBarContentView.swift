@@ -159,6 +159,13 @@ struct MenuBarContentView: View {
             Text("Scroll Mode").font(.headline)
             Toggle("Natural scrolling direction", isOn: $settings.naturalScrollDirection)
             sensitivitySlider(title: "Sensitivity", value: $settings.scrollSensitivity)
+            Toggle("Momentum scrolling", isOn: $settings.momentumScrollingEnabled)
+            if settings.momentumScrollingEnabled {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Momentum strength").font(.caption)
+                    Slider(value: $settings.momentumStrength, in: 0...1)
+                }
+            }
         }
     }
 

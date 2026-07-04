@@ -70,6 +70,66 @@ final class GestureEngine: ObservableObject {
     /// Mac Mouse Fix's events don't carry deltas.
     private var lastDeltaTrackingPosition: CGPoint?
 
+    // MARK: Momentum scrolling
+    //
+    // Momentum is triggered by detecting a FLICK, not by releasing the
+    // trigger key: while Scroll Mode is held, we track mouseMoved velocity;
+    // if it was fast and then mouseMoved events stop arriving for a short
+    // idle window, that's treated as "the ball was flicked and is now
+    // spinning down on its own" and momentum begins immediately — even
+    // though the trigger key may still be held. This deliberately does NOT
+    // trigger on key release by itself, so that releasing the key after a
+    // flick (a very natural motion) doesn't cut momentum off, and so that
+    // holding the key without flicking never starts momentum.
+
+    /// Exponential moving average of scroll speed (px/s, in the same
+    /// already-sensitivity/direction-adjusted units posted to scroll
+    /// events), updated on every Scroll Mode mouseMoved. This is the "real"
+    /// speed the trigger's own physical scrolling (e.g. a trackball's own
+    /// momentum) is producing; only once mouseMoved events stop arriving
+    /// do we splice in our own synthetic decay (`momentumVelocityX/Y`) to
+    /// continue the motion.
+    private var scrollVelocityX = 0.0
+    private var scrollVelocityY = 0.0
+    private var lastVelocitySampleTime: CFAbsoluteTime?
+    /// Smoothing factor for the velocity EMA (0...1, higher = more reactive to the latest sample).
+    private static let velocityEMAAlpha = 0.35
+
+    private var momentumActive = false
+    private var momentumVelocityX = 0.0
+    private var momentumVelocityY = 0.0
+    private var momentumStartTime: CFAbsoluteTime?
+    private var momentumTimer: Timer?
+    private var isFirstMomentumTick = true
+    private var isFirstScrollEventOfDrag = true
+
+    /// Fires once mouseMoved events stop arriving for this long during
+    /// Scroll Mode; if the tracked speed at that point is still above
+    /// `momentumStartThreshold`, that's treated as a flick and momentum
+    /// begins. Reset (cancelled + rescheduled) on every mouseMoved, so as
+    /// long as real movement keeps arriving (e.g. a trackball ball still
+    /// physically spinning down on its own), we just keep scrolling at its
+    /// real reported speed and never touch this. 50-100ms is the
+    /// recommended tunable range.
+    private var flickDetectionTimer: Timer?
+    private static let flickIdleDetectionInterval = 0.07
+
+    /// A flick only starts momentum if speed at the idle-detection moment is at least this fast (px/s).
+    private static let momentumStartThreshold = 120.0
+    /// Momentum stops once decayed speed drops below this (px/s).
+    private static let momentumStopThreshold = 8.0
+    private static let momentumTickInterval = 1.0 / 60.0
+
+    /// Maps `AppSettings.momentumStrength` (0...1, "looseness") to a decay
+    /// half-life in seconds, then to a per-tick multiplicative decay factor.
+    /// This is the "decay rate as an adjustable constant" the feature asked
+    /// for: the 0.15s...1.5s half-life range below is the constant to tune.
+    private static func momentumDecayFactorPerTick(strength: Double) -> Double {
+        let clamped = min(max(strength, 0), 1)
+        let halfLifeSeconds = 0.15 + clamped * 1.35
+        return pow(0.5, momentumTickInterval / halfLifeSeconds)
+    }
+
     private let settings = AppSettings.shared
 
     @Published private(set) var tapStatus: TapStatus = .notStarted
@@ -86,10 +146,18 @@ final class GestureEngine: ObservableObject {
     func start() {
         guard eventTap == nil else { return }
 
+        // NOTE: intentionally NOT subscribing to .otherMouseDown (middle/side
+        // buttons) here. Mac Mouse Fix synthesizes its own auxiliary mouse
+        // button events as part of its click-and-drag scroll emulation, and
+        // those were incorrectly detected as "the user clicked" — stopping
+        // momentum scrolling that hadn't actually been interrupted by a real
+        // click. Left/right clicks are unambiguous real user actions.
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
-            (1 << CGEventType.mouseMoved.rawValue)
+            (1 << CGEventType.mouseMoved.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue)
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
@@ -150,6 +218,7 @@ final class GestureEngine: ObservableObject {
     /// an in-progress pinch gesture is always closed out. Call this from the
     /// app's termination handling.
     func endActiveModesIfNeeded() {
+        cancelFlickDetection()
         if scrollActive {
             reassociateCursor()
             scrollActive = false
@@ -158,6 +227,9 @@ final class GestureEngine: ObservableObject {
             postZoomEvent(phase: .ended, magnification: 0)
             reassociateCursor()
             zoomActive = false
+        }
+        if momentumActive {
+            stopMomentum(reason: "app terminating")
         }
         lockedCursorPosition = nil
         lastDeltaTrackingPosition = nil
@@ -225,6 +297,16 @@ final class GestureEngine: ObservableObject {
             return handleKeyEvent(type: type, event: event)
         case .mouseMoved:
             return handleMouseMoved(event: event)
+        case .leftMouseDown, .rightMouseDown:
+            // A click during momentum scrolling should stop it, so an
+            // in-flight inertial scroll doesn't keep scrolling the page out
+            // from under an unrelated click. Always pass the click through
+            // unmodified either way — we only ever observe it here.
+            if momentumActive {
+                let typeName = type == .leftMouseDown ? "left" : "right"
+                stopMomentum(reason: "\(typeName) mouse click")
+            }
+            return Unmanaged.passRetained(event)
         default:
             return Unmanaged.passRetained(event)
         }
@@ -267,12 +349,28 @@ final class GestureEngine: ObservableObject {
 
         if keyCode == settings.scrollTriggerKeyCode {
             if type == .keyDown, !scrollActive {
+                if momentumActive {
+                    stopMomentum(reason: "new Scroll Mode started")
+                }
+                cancelFlickDetection()
                 scrollActive = true
+                isFirstScrollEventOfDrag = true
+                resetScrollVelocityTracking()
                 disassociateCursor()
                 Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             } else if type == .keyUp, scrollActive {
                 scrollActive = false
                 reassociateCursor()
+                if !momentumActive {
+                    // No flick was detected while the key was held, so this
+                    // release is the natural end of the drag gesture.
+                    postScrollPhaseMarker(scrollPhase: .ended, momentumPhase: nil)
+                }
+                // Deliberately NOT starting or stopping momentum here — see
+                // the "Momentum scrolling" MARK above. If a flick was
+                // already detected mid-hold, momentum keeps running
+                // independently of this key release (so flick-then-release
+                // works naturally); if not, nothing further happens.
                 Self.logger.notice("Scroll Mode ENDED (keyCode=\(keyCode, privacy: .public)).")
             }
             return nil
@@ -298,9 +396,18 @@ final class GestureEngine: ObservableObject {
 
     private func handleMouseMoved(event: CGEvent) -> Unmanaged<CGEvent>? {
         if scrollActive {
+            if momentumActive {
+                // The ball was flicked (momentum already started) but has
+                // been grabbed/moved again — cancel the synthetic decay and
+                // resume real-time scrolling seamlessly, as one continuous
+                // gesture from the user's perspective.
+                stopMomentum(reason: "ball moved again")
+                isFirstScrollEventOfDrag = true
+            }
             let delta = effectiveDelta(from: event)
             postScroll(deltaX: delta.dx, deltaY: delta.dy)
             pinCursorIfNeeded(source: "mouseMoved")
+            scheduleFlickDetection()
             return nil
         }
         if zoomActive {
@@ -310,6 +417,48 @@ final class GestureEngine: ObservableObject {
             return nil
         }
         return Unmanaged.passRetained(event)
+    }
+
+    /// Resets the flick-idle timer: as long as mouseMoved events keep
+    /// arriving within `flickIdleDetectionInterval` of each other, this
+    /// never fires and we just keep scrolling at whatever real speed is
+    /// being reported. Once movement actually stops (or slows enough that
+    /// events stop arriving that quickly), `checkForFlick()` fires and
+    /// decides whether that was a flick worth continuing as momentum.
+    private func scheduleFlickDetection() {
+        flickDetectionTimer?.invalidate()
+        let timer = Timer(timeInterval: Self.flickIdleDetectionInterval, repeats: false) { _ in
+            Task { @MainActor [weak self] in
+                self?.checkForFlick()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        flickDetectionTimer = timer
+    }
+
+    private func cancelFlickDetection() {
+        flickDetectionTimer?.invalidate()
+        flickDetectionTimer = nil
+    }
+
+    /// Called when no mouseMoved arrived for `flickIdleDetectionInterval`.
+    /// If the tracked speed at that moment is still fast, this was a flick:
+    /// close out the drag phase (as if fingers were lifted) and start
+    /// momentum from here, regardless of whether the trigger key is still
+    /// physically held.
+    private func checkForFlick() {
+        flickDetectionTimer = nil
+        guard !momentumActive else { return }
+
+        let speed = (scrollVelocityX * scrollVelocityX + scrollVelocityY * scrollVelocityY).squareRoot()
+        guard settings.momentumScrollingEnabled, speed >= Self.momentumStartThreshold else {
+            resetScrollVelocityTracking()
+            return
+        }
+
+        postScrollPhaseMarker(scrollPhase: .ended, momentumPhase: nil)
+        beginMomentum(velocityX: scrollVelocityX, velocityY: scrollVelocityY)
+        resetScrollVelocityTracking()
     }
 
     /// Reads mouseEventDeltaX/Y off the event; if a third-party mouse
@@ -378,8 +527,12 @@ final class GestureEngine: ObservableObject {
         let sign: Double = settings.naturalScrollDirection ? 1 : -1
         let sensitivity = settings.scrollSensitivity
 
-        let scrollY = Int32((deltaY * sensitivity * sign).rounded())
-        let scrollX = Int32((deltaX * sensitivity * sign).rounded())
+        let rawScrollY = deltaY * sensitivity * sign
+        let rawScrollX = deltaX * sensitivity * sign
+        updateScrollVelocity(scrollX: rawScrollX, scrollY: rawScrollY)
+
+        let scrollY = Int32(rawScrollY.rounded())
+        let scrollX = Int32(rawScrollX.rounded())
         guard scrollY != 0 || scrollX != 0 else { return }
 
         guard let scrollEvent = CGEvent(
@@ -391,7 +544,145 @@ final class GestureEngine: ObservableObject {
             wheel3: 0
         ) else { return }
 
+        // First event of a drag carries .began, the rest .changed — this is
+        // a real trackpad-style scroll phase sequence (see
+        // ScrollPhaseExtensions.swift), not just discrete wheel ticks.
+        let phase: ScrollPhase = isFirstScrollEventOfDrag ? .began : .changed
+        isFirstScrollEventOfDrag = false
+        scrollEvent.setScrollPhases(scrollPhase: phase, momentumPhase: nil)
+
         scrollEvent.post(tap: .cghidEventTap)
+    }
+
+    /// Posts a zero-delta scroll event carrying only a phase transition
+    /// (e.g. drag .ended, or momentum .end). Real trackpad scrolling always
+    /// sends one of these to mark a transition, separate from any event
+    /// that actually carries movement. `tap` defaults to `.cghidEventTap`
+    /// (matching regular drag events); momentum-related markers pass
+    /// `.cgSessionEventTap` instead — see the comment in `momentumTick()`.
+    private func postScrollPhaseMarker(
+        scrollPhase: ScrollPhase?,
+        momentumPhase: MomentumScrollPhase?,
+        tap: CGEventTapLocation = .cghidEventTap
+    ) {
+        guard let event = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: 0,
+            wheel2: 0,
+            wheel3: 0
+        ) else { return }
+
+        event.setScrollPhases(scrollPhase: scrollPhase, momentumPhase: momentumPhase)
+        event.post(tap: tap)
+    }
+
+    /// Updates the exponential moving average of scroll speed (px/s) used
+    /// as momentum's starting velocity if the trigger key is released while
+    /// still moving. `scrollX`/`scrollY` are in the same already-sensitivity/
+    /// direction-adjusted units posted to real scroll events.
+    private func updateScrollVelocity(scrollX: Double, scrollY: Double) {
+        let now = CFAbsoluteTimeGetCurrent()
+        defer { lastVelocitySampleTime = now }
+
+        guard let last = lastVelocitySampleTime else { return }
+        let dt = now - last
+        guard dt > 0.001 else { return }
+
+        let instantVelocityX = scrollX / dt
+        let instantVelocityY = scrollY / dt
+        let alpha = Self.velocityEMAAlpha
+        scrollVelocityX = alpha * instantVelocityX + (1 - alpha) * scrollVelocityX
+        scrollVelocityY = alpha * instantVelocityY + (1 - alpha) * scrollVelocityY
+    }
+
+    private func resetScrollVelocityTracking() {
+        scrollVelocityX = 0
+        scrollVelocityY = 0
+        lastVelocitySampleTime = nil
+    }
+
+    /// Starts a decaying momentum phase from the given velocity. Called
+    /// from `checkForFlick()` when a flick is detected — never from key
+    /// release directly (see the "Momentum scrolling" MARK above).
+    private func beginMomentum(velocityX: Double, velocityY: Double) {
+        momentumVelocityX = velocityX
+        momentumVelocityY = velocityY
+        momentumActive = true
+        isFirstMomentumTick = true
+        momentumStartTime = CFAbsoluteTimeGetCurrent()
+
+        let speed = (velocityX * velocityX + velocityY * velocityY).squareRoot()
+        let startMessage = "Momentum scrolling STARTED initialVelocity=(\(velocityX),\(velocityY))px/s " +
+            "speed=\(speed)px/s strength=\(settings.momentumStrength)"
+        Self.logger.notice("\(startMessage, privacy: .public)")
+
+        let timer = Timer(timeInterval: Self.momentumTickInterval, repeats: true) { _ in
+            Task { @MainActor [weak self] in
+                self?.momentumTick()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        momentumTimer = timer
+    }
+
+    private func momentumTick() {
+        guard momentumActive else { return }
+
+        let decay = Self.momentumDecayFactorPerTick(strength: settings.momentumStrength)
+        momentumVelocityX *= decay
+        momentumVelocityY *= decay
+
+        let speed = (momentumVelocityX * momentumVelocityX + momentumVelocityY * momentumVelocityY).squareRoot()
+        guard speed >= Self.momentumStopThreshold else {
+            stopMomentum(reason: "decayed below threshold")
+            return
+        }
+
+        let scrollX = Int32((momentumVelocityX * Self.momentumTickInterval).rounded())
+        let scrollY = Int32((momentumVelocityY * Self.momentumTickInterval).rounded())
+        guard let event = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: scrollY,
+            wheel2: scrollX,
+            wheel3: 0
+        ) else { return }
+
+        let phase: MomentumScrollPhase = isFirstMomentumTick ? .begin : .continue
+        isFirstMomentumTick = false
+        event.setScrollPhases(scrollPhase: nil, momentumPhase: phase)
+
+        // Momentum-phase events specifically are posted at .cgSessionEventTap
+        // (not .cghidEventTap like regular drag events) so they bypass any
+        // HID-level event tap entirely — including Mac Mouse Fix's own
+        // scroll-wheel tap, which sits at kCGHIDEventTap. Per Mac Mouse
+        // Fix's own (open) source (Helper/Core/Scroll/Scroll.m), it already
+        // passes through continuous/phased events unmodified, but injecting
+        // downstream of any such HID-level tap is a strictly safer
+        // guarantee than relying on that.
+        event.post(tap: .cgSessionEventTap)
+    }
+
+    private func stopMomentum(reason: String) {
+        guard momentumActive else { return }
+        let duration = momentumStartTime.map { CFAbsoluteTimeGetCurrent() - $0 } ?? 0
+        Self.logger.notice("Momentum scrolling ENDED reason=\(reason, privacy: .public) duration=\(duration, privacy: .public)s")
+
+        // Always send the momentum .end marker exactly once here, regardless
+        // of why momentum is stopping (natural decay, a new Scroll Mode
+        // starting, a mouse click, or app termination), so the receiving
+        // app's momentum state machine is always closed out cleanly.
+        postScrollPhaseMarker(scrollPhase: nil, momentumPhase: .end, tap: .cgSessionEventTap)
+
+        momentumTimer?.invalidate()
+        momentumTimer = nil
+        momentumActive = false
+        momentumVelocityX = 0
+        momentumVelocityY = 0
+        momentumStartTime = nil
     }
 
     private func postZoomDelta(deltaY: Double) {
