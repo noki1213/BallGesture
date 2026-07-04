@@ -41,6 +41,8 @@ final class AppSettings: ObservableObject {
         static let scrollSensitivity = "BallGesture.scrollSensitivity"
         static let zoomSensitivity = "BallGesture.zoomSensitivity"
         static let naturalScrollDirection = "BallGesture.naturalScrollDirection"
+        static let momentumScrollingEnabled = "BallGesture.momentumScrollingEnabled"
+        static let momentumStrength = "BallGesture.momentumStrength"
         static let zoomMethod = "BallGesture.zoomMethod"
         static let scrollTriggerKeyCode = "BallGesture.scrollTriggerKeyCode"
         static let zoomTriggerKeyCode = "BallGesture.zoomTriggerKeyCode"
@@ -67,6 +69,15 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(naturalScrollDirection, forKey: Keys.naturalScrollDirection) }
     }
 
+    @Published var momentumScrollingEnabled: Bool {
+        didSet { defaults.set(momentumScrollingEnabled, forKey: Keys.momentumScrollingEnabled) }
+    }
+
+    /// 0...1. Higher = looser/longer momentum (a longer decay half-life).
+    @Published var momentumStrength: Double {
+        didSet { defaults.set(momentumStrength, forKey: Keys.momentumStrength) }
+    }
+
     @Published var zoomMethod: ZoomMethod {
         didSet { defaults.set(zoomMethod.rawValue, forKey: Keys.zoomMethod) }
     }
@@ -91,6 +102,8 @@ final class AppSettings: ObservableObject {
         scrollSensitivity = defaults.object(forKey: Keys.scrollSensitivity) as? Double ?? 1.0
         zoomSensitivity = defaults.object(forKey: Keys.zoomSensitivity) as? Double ?? 1.0
         naturalScrollDirection = defaults.object(forKey: Keys.naturalScrollDirection) as? Bool ?? true
+        momentumScrollingEnabled = defaults.object(forKey: Keys.momentumScrollingEnabled) as? Bool ?? true
+        momentumStrength = defaults.object(forKey: Keys.momentumStrength) as? Double ?? 0.5
         zoomMethod = ZoomMethod(rawValue: defaults.string(forKey: Keys.zoomMethod) ?? "") ?? .pinch
         scrollTriggerKeyCode = defaults.object(forKey: Keys.scrollTriggerKeyCode) as? Int64
             ?? Self.defaultScrollTriggerKeyCode
