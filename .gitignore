@@ -1,0 +1,10 @@
+# Claude Code / AI-related (personal settings, work logs)
+.claude/
+作業ログ/
+CLAUDE.md
+
+# Xcode per-user files
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
