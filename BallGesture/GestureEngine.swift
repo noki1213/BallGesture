@@ -447,15 +447,14 @@ final class GestureEngine: ObservableObject {
                 gestureAccumulatedY += delta.dy
 
                 let threshold = settings.gestureDistance
-                Self.logger.notice(
-                    "Gesture accumulating: dx=\(self.gestureAccumulatedX, privacy: .public) dy=\(self.gestureAccumulatedY, privacy: .public) threshold=\(threshold, privacy: .public)"
-                )
                 if abs(gestureAccumulatedX) > threshold || abs(gestureAccumulatedY) > threshold {
                     hasTriggeredGesture = true
                     triggerGesture(dx: gestureAccumulatedX, dy: gestureAccumulatedY)
+                    pinCursorIfNeeded(source: "gestureTriggered")
                 }
+            } else {
+                pinCursorIfNeeded(source: "mouseMoved")
             }
-            pinCursorIfNeeded(source: "mouseMoved")
             return nil
         }
         return Unmanaged.passRetained(event)
@@ -765,14 +764,14 @@ final class GestureEngine: ObservableObject {
     private func triggerGesture(dx: Double, dy: Double) {
         if abs(dx) > abs(dy) {
             // Horizontal
-            if dx > 0 {
-                // Left: Browser Back (Cmd + Left)
+            if dx < 0 {
+                // Left: Browser Back (Cmd + [ )
                 Self.logger.notice("Gesture Triggered: Browser Back (Left)")
-                postKeyboardShortcut(keyCode: 123, flags: .maskCommand)
+                postKeyboardShortcut(keyCode: 33, flags: .maskCommand) // 33 is '['
             } else {
-                // Right: Browser Forward (Cmd + Right)
+                // Right: Browser Forward (Cmd + ] )
                 Self.logger.notice("Gesture Triggered: Browser Forward (Right)")
-                postKeyboardShortcut(keyCode: 124, flags: .maskCommand)
+                postKeyboardShortcut(keyCode: 30, flags: .maskCommand) // 30 is ']'
             }
         } else {
             // Vertical
