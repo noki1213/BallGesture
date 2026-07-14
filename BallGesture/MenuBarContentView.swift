@@ -38,6 +38,10 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            gestureSection
+
+            Divider()
+
             Button("Quit BallGesture") {
                 NSApp.terminate(nil)
             }
@@ -180,6 +184,19 @@ struct MenuBarContentView: View {
             }
             .pickerStyle(.menu)
             sensitivitySlider(title: "Sensitivity", value: $settings.zoomSensitivity)
+        }
+    }
+
+    private var gestureSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Gesture Mode").font(.headline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Trigger Distance (px)").font(.caption)
+                Slider(value: $settings.gestureDistance, in: 10.0...200.0, step: 10.0)
+                Text("\(Int(settings.gestureDistance)) px")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
     }
 

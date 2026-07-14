@@ -447,7 +447,7 @@ final class GestureEngine: ObservableObject {
                 gestureAccumulatedX += delta.dx
                 gestureAccumulatedY += delta.dy
 
-                let threshold = 100.0 // px
+                let threshold = settings.gestureDistance
                 if abs(gestureAccumulatedX) > threshold || abs(gestureAccumulatedY) > threshold {
                     hasTriggeredGesture = true
                     triggerGesture(dx: gestureAccumulatedX, dy: gestureAccumulatedY)
@@ -762,7 +762,7 @@ final class GestureEngine: ObservableObject {
     private func triggerGesture(dx: Double, dy: Double) {
         if abs(dx) > abs(dy) {
             // Horizontal
-            if dx < 0 {
+            if dx > 0 {
                 // Left: Browser Back (Cmd + Left)
                 Self.logger.notice("Gesture Triggered: Browser Back (Left)")
                 postKeyboardShortcut(keyCode: 123, flags: .maskCommand)

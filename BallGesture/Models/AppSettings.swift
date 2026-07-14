@@ -48,6 +48,7 @@ final class AppSettings: ObservableObject {
         static let scrollTriggerKeyCode = "BallGesture.scrollTriggerKeyCode"
         static let zoomTriggerKeyCode = "BallGesture.zoomTriggerKeyCode"
         static let gestureTriggerKeyCode = "BallGesture.gestureTriggerKeyCode"
+        static let gestureDistance = "BallGesture.gestureDistance"
     }
 
     static let defaultScrollTriggerKeyCode = Int64(kVK_F15) // 113
@@ -81,6 +82,10 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(momentumStrength, forKey: Keys.momentumStrength) }
     }
 
+    @Published var gestureDistance: Double {
+        didSet { defaults.set(gestureDistance, forKey: Keys.gestureDistance) }
+    }
+
     @Published var zoomMethod: ZoomMethod {
         didSet { defaults.set(zoomMethod.rawValue, forKey: Keys.zoomMethod) }
     }
@@ -111,6 +116,7 @@ final class AppSettings: ObservableObject {
         naturalScrollDirection = defaults.object(forKey: Keys.naturalScrollDirection) as? Bool ?? true
         momentumScrollingEnabled = defaults.object(forKey: Keys.momentumScrollingEnabled) as? Bool ?? true
         momentumStrength = defaults.object(forKey: Keys.momentumStrength) as? Double ?? 0.5
+        gestureDistance = defaults.object(forKey: Keys.gestureDistance) as? Double ?? 50.0
         zoomMethod = ZoomMethod(rawValue: defaults.string(forKey: Keys.zoomMethod) ?? "") ?? .pinch
         scrollTriggerKeyCode = defaults.object(forKey: Keys.scrollTriggerKeyCode) as? Int64
             ?? Self.defaultScrollTriggerKeyCode
