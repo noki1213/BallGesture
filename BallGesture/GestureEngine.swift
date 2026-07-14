@@ -776,13 +776,22 @@ final class GestureEngine: ObservableObject {
         } else {
             // Vertical
             if dy < 0 {
-                // Up: Mission Control (Ctrl + Up)
+                // Up: Mission Control
                 Self.logger.notice("Gesture Triggered: Mission Control (Up)")
-                postKeyboardShortcut(keyCode: 126, flags: .maskControl)
+                if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.exposelauncher") {
+                    let config = NSWorkspace.OpenConfiguration()
+                    NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
+                }
             } else {
-                // Down: Desktop (F11)
-                Self.logger.notice("Gesture Triggered: Desktop (Down)")
-                postKeyboardShortcut(keyCode: 103, flags: [])
+                // Down: Show Desktop (F11)
+                Self.logger.notice("Gesture Triggered: Show Desktop (Down)")
+                postKeyboardShortcut(keyCode: 103, flags: []) // Try CGEvent first
+                // Fallback to AppleScript for system shortcuts that often ignore CGEvents
+                let scriptSource = "tell application \"System Events\" to key code 103"
+                if let appleScript = NSAppleScript(source: scriptSource) {
+                    var errorDict: NSDictionary? = nil
+                    appleScript.executeAndReturnError(&errorDict)
+                }
             }
         }
     }
