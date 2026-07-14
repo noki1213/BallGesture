@@ -30,6 +30,7 @@ enum ZoomMethod: String, CaseIterable, Identifiable {
 enum KeyCaptureTarget {
     case scrollTrigger
     case zoomTrigger
+    case gestureTrigger
 }
 
 @MainActor
@@ -46,10 +47,12 @@ final class AppSettings: ObservableObject {
         static let zoomMethod = "BallGesture.zoomMethod"
         static let scrollTriggerKeyCode = "BallGesture.scrollTriggerKeyCode"
         static let zoomTriggerKeyCode = "BallGesture.zoomTriggerKeyCode"
+        static let gestureTriggerKeyCode = "BallGesture.gestureTriggerKeyCode"
     }
 
     static let defaultScrollTriggerKeyCode = Int64(kVK_F15) // 113
     static let defaultZoomTriggerKeyCode = Int64(kVK_F16)   // 106
+    static let defaultGestureTriggerKeyCode = Int64(64)     // F17
 
     private let defaults: UserDefaults
 
@@ -90,6 +93,10 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(zoomTriggerKeyCode, forKey: Keys.zoomTriggerKeyCode) }
     }
 
+    @Published private(set) var gestureTriggerKeyCode: Int64 {
+        didSet { defaults.set(gestureTriggerKeyCode, forKey: Keys.gestureTriggerKeyCode) }
+    }
+
     /// Non-persisted UI state: which trigger key is currently being captured.
     @Published var captureTarget: KeyCaptureTarget?
     /// Non-persisted UI state: message shown when a capture attempt is rejected.
@@ -109,6 +116,8 @@ final class AppSettings: ObservableObject {
             ?? Self.defaultScrollTriggerKeyCode
         zoomTriggerKeyCode = defaults.object(forKey: Keys.zoomTriggerKeyCode) as? Int64
             ?? Self.defaultZoomTriggerKeyCode
+        gestureTriggerKeyCode = defaults.object(forKey: Keys.gestureTriggerKeyCode) as? Int64
+            ?? Self.defaultGestureTriggerKeyCode
     }
 
     /// Starts capturing the next pressed key for the given target.
@@ -128,17 +137,24 @@ final class AppSettings: ObservableObject {
     func handleCapturedKeyCode(_ keyCode: Int64) -> Bool {
         guard let target = captureTarget else { return false }
 
-        let otherKeyCode = (target == .scrollTrigger) ? zoomTriggerKeyCode : scrollTriggerKeyCode
-        if keyCode == otherKeyCode {
-            let otherName = (target == .scrollTrigger) ? "Zoom Mode" : "Scroll Mode"
-            captureErrorMessage = "That key is already assigned to \(otherName). Choose a different key."
-            captureTarget = nil
-            return true
+        let otherKeys: [(KeyCaptureTarget, Int64, String)] = [
+            (.scrollTrigger, scrollTriggerKeyCode, "Scroll Mode"),
+            (.zoomTrigger, zoomTriggerKeyCode, "Zoom Mode"),
+            (.gestureTrigger, gestureTriggerKeyCode, "Gesture Mode")
+        ].filter { $0.0 != target }
+
+        for (_, otherKeyCode, otherName) in otherKeys {
+            if keyCode == otherKeyCode {
+                captureErrorMessage = "That key is already assigned to \(otherName). Choose a different key."
+                captureTarget = nil
+                return true
+            }
         }
 
         switch target {
         case .scrollTrigger: scrollTriggerKeyCode = keyCode
         case .zoomTrigger: zoomTriggerKeyCode = keyCode
+        case .gestureTrigger: gestureTriggerKeyCode = keyCode
         }
         captureErrorMessage = nil
         captureTarget = nil
