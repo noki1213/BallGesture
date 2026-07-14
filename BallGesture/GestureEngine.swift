@@ -783,15 +783,11 @@ final class GestureEngine: ObservableObject {
                     NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
                 }
             } else {
-                // Down: Show Desktop (F11)
+                // Down: Show Desktop (Cmd + Option + Control + D)
                 Self.logger.notice("Gesture Triggered: Show Desktop (Down)")
-                postKeyboardShortcut(keyCode: 103, flags: []) // Try CGEvent first
-                // Fallback to AppleScript for system shortcuts that often ignore CGEvents
-                let scriptSource = "tell application \"System Events\" to key code 103"
-                if let appleScript = NSAppleScript(source: scriptSource) {
-                    var errorDict: NSDictionary? = nil
-                    appleScript.executeAndReturnError(&errorDict)
-                }
+                // F11 (103) is often blocked by macOS or Karabiner.
+                // We send a reliable complex shortcut (Cmd+Opt+Ctrl+D, keyCode: 2) instead.
+                postKeyboardShortcut(keyCode: 2, flags: [.maskCommand, .maskAlternate, .maskControl])
             }
         }
     }
