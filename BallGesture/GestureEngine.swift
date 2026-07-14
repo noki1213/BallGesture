@@ -441,18 +441,21 @@ final class GestureEngine: ObservableObject {
             return nil
         }
         if gestureActive {
-            pinCursorIfNeeded(source: "mouseMoved")
             if !hasTriggeredGesture {
                 let delta = effectiveDelta(from: event)
                 gestureAccumulatedX += delta.dx
                 gestureAccumulatedY += delta.dy
 
                 let threshold = settings.gestureDistance
+                Self.logger.notice(
+                    "Gesture accumulating: dx=\(self.gestureAccumulatedX, privacy: .public) dy=\(self.gestureAccumulatedY, privacy: .public) threshold=\(threshold, privacy: .public)"
+                )
                 if abs(gestureAccumulatedX) > threshold || abs(gestureAccumulatedY) > threshold {
                     hasTriggeredGesture = true
                     triggerGesture(dx: gestureAccumulatedX, dy: gestureAccumulatedY)
                 }
             }
+            pinCursorIfNeeded(source: "mouseMoved")
             return nil
         }
         return Unmanaged.passRetained(event)
