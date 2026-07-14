@@ -124,6 +124,7 @@ struct MenuBarContentView: View {
 
             keyRow(title: "Scroll Mode", keyCode: settings.scrollTriggerKeyCode, target: .scrollTrigger)
             keyRow(title: "Zoom Mode", keyCode: settings.zoomTriggerKeyCode, target: .zoomTrigger)
+            keyRow(title: "Gesture Mode", keyCode: settings.gestureTriggerKeyCode, target: .gestureTrigger)
 
             if let message = settings.captureErrorMessage {
                 Text(message)

@@ -40,6 +40,10 @@ final class GestureEngine: ObservableObject {
 
     private var scrollActive = false
     private var zoomActive = false
+    private var gestureActive = false
+    private var gestureAccumulatedX = 0.0
+    private var gestureAccumulatedY = 0.0
+    private var hasTriggeredGesture = false
     /// Keycode whose keyUp must be swallowed after a key-capture keyDown,
     /// so the captured key doesn't leak a stray keyUp to other apps.
     private var pendingCaptureSwallowKeyCode: Int64?
@@ -228,6 +232,10 @@ final class GestureEngine: ObservableObject {
             reassociateCursor()
             zoomActive = false
         }
+        if gestureActive {
+            reassociateCursor()
+            gestureActive = false
+        }
         if momentumActive {
             stopMomentum(reason: "app terminating")
         }
@@ -391,6 +399,22 @@ final class GestureEngine: ObservableObject {
             return nil
         }
 
+        if keyCode == settings.gestureTriggerKeyCode {
+            if type == .keyDown, !gestureActive {
+                gestureActive = true
+                gestureAccumulatedX = 0.0
+                gestureAccumulatedY = 0.0
+                hasTriggeredGesture = false
+                disassociateCursor()
+                Self.logger.notice("Gesture Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
+            } else if type == .keyUp, gestureActive {
+                gestureActive = false
+                reassociateCursor()
+                Self.logger.notice("Gesture Mode ENDED (keyCode=\(keyCode, privacy: .public)).")
+            }
+            return nil
+        }
+
         return Unmanaged.passRetained(event)
     }
 
@@ -414,6 +438,21 @@ final class GestureEngine: ObservableObject {
             let delta = effectiveDelta(from: event)
             postZoomDelta(deltaY: delta.dy)
             pinCursorIfNeeded(source: "mouseMoved")
+            return nil
+        }
+        if gestureActive {
+            pinCursorIfNeeded(source: "mouseMoved")
+            if !hasTriggeredGesture {
+                let delta = effectiveDelta(from: event)
+                gestureAccumulatedX += delta.dx
+                gestureAccumulatedY += delta.dy
+
+                let threshold = 100.0 // px
+                if abs(gestureAccumulatedX) > threshold || abs(gestureAccumulatedY) > threshold {
+                    hasTriggeredGesture = true
+                    triggerGesture(dx: gestureAccumulatedX, dy: gestureAccumulatedY)
+                }
+            }
             return nil
         }
         return Unmanaged.passRetained(event)
@@ -718,6 +757,44 @@ final class GestureEngine: ObservableObject {
 
         scrollEvent.flags = settings.zoomMethod == .cmdScroll ? .maskCommand : .maskControl
         scrollEvent.post(tap: .cghidEventTap)
+    }
+
+    private func triggerGesture(dx: Double, dy: Double) {
+        if abs(dx) > abs(dy) {
+            // Horizontal
+            if dx < 0 {
+                // Left: Browser Back (Cmd + Left)
+                Self.logger.notice("Gesture Triggered: Browser Back (Left)")
+                postKeyboardShortcut(keyCode: 123, flags: .maskCommand)
+            } else {
+                // Right: Browser Forward (Cmd + Right)
+                Self.logger.notice("Gesture Triggered: Browser Forward (Right)")
+                postKeyboardShortcut(keyCode: 124, flags: .maskCommand)
+            }
+        } else {
+            // Vertical
+            if dy < 0 {
+                // Up: Mission Control (Ctrl + Up)
+                Self.logger.notice("Gesture Triggered: Mission Control (Up)")
+                postKeyboardShortcut(keyCode: 126, flags: .maskControl)
+            } else {
+                // Down: Desktop (F11)
+                Self.logger.notice("Gesture Triggered: Desktop (Down)")
+                postKeyboardShortcut(keyCode: 103, flags: [])
+            }
+        }
+    }
+
+    private func postKeyboardShortcut(keyCode: CGKeyCode, flags: CGEventFlags) {
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else { return }
+
+        keyDown.flags = flags
+        keyUp.flags = flags
+
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
     }
 }
 
