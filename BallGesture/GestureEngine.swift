@@ -446,8 +446,19 @@ final class GestureEngine: ObservableObject {
                 gestureAccumulatedX += delta.dx
                 gestureAccumulatedY += delta.dy
 
+                // Fire only once one axis is clearly dominant (2x the other),
+                // not merely first past the threshold: a leftward trackball
+                // swipe naturally carries some diagonal drift, and deciding
+                // the direction at the instant either axis crossed the
+                // threshold made ~45° inputs resolve to the wrong gesture
+                // (Back turning into Mission Control). Ambiguous diagonal
+                // input now just waits for more movement instead.
                 let threshold = settings.gestureDistance
-                if abs(gestureAccumulatedX) > threshold || abs(gestureAccumulatedY) > threshold {
+                let ax = abs(gestureAccumulatedX)
+                let ay = abs(gestureAccumulatedY)
+                let horizontalWins = ax > threshold && ax > 2 * ay
+                let verticalWins = ay > threshold && ay > 2 * ax
+                if horizontalWins || verticalWins {
                     hasTriggeredGesture = true
                     triggerGesture(dx: gestureAccumulatedX, dy: gestureAccumulatedY)
                     pinCursorIfNeeded(source: "gestureTriggered")
