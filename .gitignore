@@ -8,3 +8,7 @@ xcuserdata/
 *.xcuserstate
 DerivedData/
 build/
+
+# Local settings (e.g. signing Team ID)
+.env
+dist/

@@ -10,27 +10,44 @@ BallGesture lives in the menu bar and has no main window.
 
 ## Requirements
 
-- macOS 26.5 or later
+- macOS 13 or later. Developed and tested on macOS 26; earlier versions should work but have not been verified.
+- Apple Silicon or Intel (the released build is universal)
 - Accessibility permission (required — see below)
 
 BallGesture watches keyboard and mouse events through a `CGEventTap`, which macOS only allows with Accessibility permission. On first launch, open the menu bar icon and use the **Open Accessibility Settings** button, then allow BallGesture under System Settings → Privacy & Security → Accessibility. Once permission is granted, the event tap starts within a few seconds — no restart needed.
 
 ## Installation
 
-Build from source with Xcode:
+### Download the app
+
+1. Download the `.zip` from the [Releases](https://github.com/noki1213/BallGesture/releases) page.
+2. Unzip it and move `BallGesture.app` into your Applications folder.
+3. Open it. **macOS will refuse the first time** — see below.
+
+BallGesture is not notarized by Apple, because notarization requires a paid Apple Developer Program membership that I do not have. macOS therefore treats it as coming from an unidentified developer and blocks the first launch. This is expected, and you have two ways past it:
+
+- Open System Settings → Privacy & Security, scroll to the bottom, and click **Open Anyway** next to the BallGesture message. Then open the app again.
+- Or clear the quarantine flag from the terminal, then open it normally:
+
+  ```sh
+  xattr -cr /Applications/BallGesture.app
+  ```
+
+Only the first launch is affected. If you would rather not rely on a binary from a stranger, build it yourself instead — that is what the next section is for.
+
+### Build from source
+
+Requires Xcode. No Apple Developer account needed.
 
 ```sh
 git clone https://github.com/noki1213/BallGesture.git
 cd BallGesture
-xcodebuild -scheme BallGesture -configuration Release \
-  -derivedDataPath build \
-  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM="" \
-  build
-cp -R build/Build/Products/Release/BallGesture.app /Applications/
+./install.sh
 ```
 
-The signing flags build the app unsigned, so you do not need an Apple Developer account. If you prefer the Xcode GUI, open `BallGesture.xcodeproj`, select the BallGesture target → Signing & Capabilities, and set **Team** to your own account or to None before building.
+`install.sh` builds an unsigned Release build and installs it to `/Applications`. Because you built it locally, macOS does not quarantine it and there is no first-launch prompt.
+
+To build from the Xcode GUI instead, open `BallGesture.xcodeproj` and build the BallGesture scheme. Signing is left unset in the project, so Xcode will sign it to run locally without asking for an account.
 
 ## Usage
 
@@ -100,7 +117,8 @@ The source is here in full, so you can verify all of this rather than take my wo
 
 ## Known Limitations
 
-- **macOS 26.5 or later.** The deployment target is high simply because that is what it was developed against; it has not been tested on earlier versions.
+- **Only tested on macOS 26.** The app is built for macOS 13 and later and uses nothing newer, but I have no older machines to test on, so behaviour there is unverified.
+- **Not notarized.** See the installation section. Without a paid Apple Developer account the first launch has to be approved manually.
 - **Mac Mouse Fix.** I use BallGesture alongside Mac Mouse Fix and have not run into problems, but the two have not been tested together exhaustively. Both apps intercept and re-emit mouse events, so conflicts are possible in configurations I have not tried. If the pointer behaves oddly during a mode, quit Mac Mouse Fix to check whether it is involved.
 - **Zoom depends on the application.** No zoom method works everywhere. If one does nothing in a given app, try another.
 - **Secure input fields.** While macOS secure input is active — a password field, for example — event taps are suppressed system-wide and the trigger keys will not respond. This affects all event-tap-based tools, not just this one.
@@ -141,27 +159,44 @@ MIT License. See [LICENSE](LICENSE).
 
 ## 動作環境
 
-- macOS 26.5 以降
+- macOS 13 以降。開発と動作確認は macOS 26 で行っています。それより古いバージョンでも動作するはずですが、検証はしていません。
+- Apple Silicon / Intel（配布しているアプリは両対応）
 - アクセシビリティ権限（必須）
 
 BallGesture は `CGEventTap` でキーボードとマウスのイベントを監視しますが、macOS はこれをアクセシビリティ権限がある場合にしか許可しません。初回はメニューバーアイコンを開き **Open Accessibility Settings** ボタンから、システム設定 → プライバシーとセキュリティ → アクセシビリティ で BallGesture を許可してください。許可すれば数秒以内に自動でイベントタップが起動するので、アプリの再起動は不要です。
 
 ## インストール
 
-Xcode でソースからビルドします。
+### アプリをダウンロードする
+
+1. [Releases](https://github.com/noki1213/BallGesture/releases) から `.zip` をダウンロードします。
+2. 展開して、`BallGesture.app` をアプリケーションフォルダに入れます。
+3. 開きます。**初回は macOS に拒否されます**（下記参照）。
+
+BallGesture は Apple の公証（notarization）を受けていません。公証には有料の Apple Developer Program のメンバーシップが必要で、私が持っていないためです。そのため macOS は「開発元が未確認のアプリ」として初回起動をブロックします。これは想定どおりの動作で、通す方法が2つあります。
+
+- システム設定 → プライバシーとセキュリティ を開き、一番下までスクロールして、BallGesture についてのメッセージの横にある **このまま開く** をクリックします。そのあともう一度アプリを開いてください。
+- またはターミナルで隔離属性を外してから、普通に開きます。
+
+  ```sh
+  xattr -cr /Applications/BallGesture.app
+  ```
+
+影響があるのは初回だけです。知らない人が作ったバイナリを実行したくない場合は、次のセクションの方法で自分でビルドしてください。
+
+### ソースからビルドする
+
+Xcode が必要です。Apple Developer アカウントは不要です。
 
 ```sh
 git clone https://github.com/noki1213/BallGesture.git
 cd BallGesture
-xcodebuild -scheme BallGesture -configuration Release \
-  -derivedDataPath build \
-  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM="" \
-  build
-cp -R build/Build/Products/Release/BallGesture.app /Applications/
+./install.sh
 ```
 
-署名関連のフラグは未署名でビルドするためのもので、Apple Developer アカウントは不要です。Xcode の画面から操作する場合は、`BallGesture.xcodeproj` を開き、BallGesture ターゲット → Signing & Capabilities で **Team** を自分のアカウントか None に変更してからビルドしてください。
+`install.sh` は未署名の Release ビルドを作成して `/Applications` にインストールします。自分でビルドしたアプリは macOS に隔離されないため、初回起動の確認は出ません。
+
+Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開いて BallGesture スキームをビルドしてください。プロジェクト側で署名の設定を空にしてあるので、アカウントを求められることなくローカル実行用の署名が付きます。
 
 ## 使い方
 
@@ -231,7 +266,8 @@ cp -R build/Build/Products/Release/BallGesture.app /Applications/
 
 ## 既知の制限
 
-- **macOS 26.5 以降が必要です。** これは開発環境がそうだったというだけの理由で、それより前のバージョンでは検証していません。
+- **動作確認は macOS 26 でのみ行っています。** macOS 13 以降向けにビルドしており、それより新しい機能は使っていませんが、古い環境が手元にないため実際の挙動は未検証です。
+- **公証を受けていません。** インストールの項を参照してください。有料の Apple Developer アカウントが無いため、初回起動を手動で許可する必要があります。
 - **Mac Mouse Fix との併用。** 私自身が併用していて問題が出たことはありませんが、網羅的に検証はしていません。どちらもマウスイベントを横取りして再送出するアプリなので、試していない設定では衝突が起きる可能性があります。モード中にポインタの挙動がおかしいときは、Mac Mouse Fix を終了させて切り分けてみてください。
 - **ズームはアプリに依存します。** どの方式でも全アプリで動くわけではありません。効かない場合は別の方式を試してください。
 - **セキュア入力中は反応しません。** パスワード欄などで macOS のセキュア入力が有効になっている間は、イベントタップがシステム全体で抑制されるためトリガーキーが効きません。これはイベントタップを使うツール全般に共通の挙動です。
