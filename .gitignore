@@ -1,4 +1,4 @@
-# Claude Code / AI-related (personal settings, work logs)
+# AI assistant files (personal settings, work logs)
 .claude/
 作業ログ/
 CLAUDE.md
@@ -9,6 +9,6 @@ xcuserdata/
 DerivedData/
 build/
 
-# Local settings (e.g. signing Team ID)
+# Local settings (e.g. Team ID for code signing)
 .env
 dist/
