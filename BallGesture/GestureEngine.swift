@@ -53,7 +53,7 @@ final class GestureEngine: ObservableObject {
     /// hardware (trackball + driver utility) the cursor still visibly drifts even though
     /// `CGEvent(source: nil)?.location` keeps reporting the *locked* position — i.e. the "logical"
     /// location we read back is not reliable evidence that the on-screen cursor hasn't moved. So the
-    /// warp fallback below no longer conditions on comparing current vs. locked position: it
+    /// warp fallback below does not condition on comparing current vs. locked position: it
     /// unconditionally re-warps on every mouseMoved, plus on a ~60Hz timer as a second safety net
     /// (in case something outside our tap, e.g. a trackball driver, injects its own cursor moves).
     /// `CGWarpMouseCursorPosition` posts no events of its own, so this cannot create a feedback loop
@@ -448,11 +448,11 @@ final class GestureEngine: ObservableObject {
 
                 // Fire only once one axis is clearly dominant (2x the other),
                 // not merely first past the threshold: a leftward trackball
-                // swipe naturally carries some diagonal drift, and deciding
-                // the direction at the instant either axis crossed the
-                // threshold made ~45° inputs resolve to the wrong gesture
-                // (Back turning into Mission Control). Ambiguous diagonal
-                // input now just waits for more movement instead.
+                // swipe naturally carries some diagonal drift, so deciding
+                // the direction at the instant either axis crosses the
+                // threshold resolves ~45° input to the wrong gesture (Back
+                // turning into Mission Control). Ambiguous diagonal input
+                // waits for more movement instead.
                 let threshold = settings.gestureDistance
                 let ax = abs(gestureAccumulatedX)
                 let ay = abs(gestureAccumulatedY)

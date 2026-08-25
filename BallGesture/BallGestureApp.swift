@@ -21,12 +21,11 @@ import os
 /// "missing/timed-out bounds rectangle" symptom for other menu bar items with
 /// non-standard/lazily-laid-out button content (e.g. jordanbaird/Ice#885,
 /// #656), which matches SwiftUI MenuBarExtra's dynamically-sized button.
-/// Axis, which uses a plain NSStatusItem with an NSImage set
-/// directly on the button, has no such problem in Ice.
+/// A plain NSStatusItem with an NSImage set directly on the button reports
+/// its bounds up front and has no such problem in Ice.
 ///
-/// `NSStatusItem.variableLength` (matching Axis) is used rather than
-/// `squareLength`, since Axis is the proven-working reference for coexisting
-/// with Ice.
+/// `NSStatusItem.variableLength` is used rather than `squareLength`, since
+/// that is the configuration known to coexist with Ice.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.noki.BallGesture",
