@@ -106,6 +106,10 @@ final class GestureEngine: ObservableObject {
     private var momentumTimer: Timer?
     private var isFirstMomentumTick = true
     private var isFirstScrollEventOfDrag = true
+    /// Whether the app that was frontmost when Scroll Mode started is listed
+    /// in `reversedScrollBundleIDs`. Fixed for the whole drag (and its
+    /// momentum) so the direction never flips mid-gesture.
+    private var scrollDirectionReversed = false
 
     /// Fires once mouseMoved events stop arriving for this long during
     /// Scroll Mode; if the tracked speed at that point is still above
@@ -363,6 +367,8 @@ final class GestureEngine: ObservableObject {
                 cancelFlickDetection()
                 scrollActive = true
                 isFirstScrollEventOfDrag = true
+                scrollDirectionReversed = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                    .map(settings.reversedScrollBundleIDs.contains) ?? false
                 resetScrollVelocityTracking()
                 disassociateCursor()
                 Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
@@ -576,7 +582,7 @@ final class GestureEngine: ObservableObject {
 
         // Natural direction: moving the pointer down scrolls down (content
         // follows the movement), matching macOS's "natural scrolling" feel.
-        let sign: Double = settings.naturalScrollDirection ? 1 : -1
+        let sign: Double = (settings.naturalScrollDirection != scrollDirectionReversed) ? 1 : -1
         let sensitivity = settings.scrollSensitivity
 
         let rawScrollY = deltaY * sensitivity * sign

@@ -49,6 +49,7 @@ final class AppSettings: ObservableObject {
         static let zoomTriggerKeyCode = "BallGesture.zoomTriggerKeyCode"
         static let gestureTriggerKeyCode = "BallGesture.gestureTriggerKeyCode"
         static let gestureDistance = "BallGesture.gestureDistance"
+        static let reversedScrollBundleIDs = "BallGesture.reversedScrollBundleIDs"
     }
 
     static let defaultScrollTriggerKeyCode = Int64(kVK_F15) // 113
@@ -86,6 +87,13 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(gestureDistance, forKey: Keys.gestureDistance) }
     }
 
+    /// Apps in which Scroll Mode runs opposite to `naturalScrollDirection`,
+    /// e.g. 3D viewers where the scroll wheel zooms and the global direction
+    /// feels backwards.
+    @Published var reversedScrollBundleIDs: [String] {
+        didSet { defaults.set(reversedScrollBundleIDs, forKey: Keys.reversedScrollBundleIDs) }
+    }
+
     @Published var zoomMethod: ZoomMethod {
         didSet { defaults.set(zoomMethod.rawValue, forKey: Keys.zoomMethod) }
     }
@@ -117,6 +125,7 @@ final class AppSettings: ObservableObject {
         momentumScrollingEnabled = defaults.object(forKey: Keys.momentumScrollingEnabled) as? Bool ?? true
         momentumStrength = defaults.object(forKey: Keys.momentumStrength) as? Double ?? 0.5
         gestureDistance = defaults.object(forKey: Keys.gestureDistance) as? Double ?? 50.0
+        reversedScrollBundleIDs = defaults.stringArray(forKey: Keys.reversedScrollBundleIDs) ?? []
         zoomMethod = ZoomMethod(rawValue: defaults.string(forKey: Keys.zoomMethod) ?? "") ?? .pinch
         scrollTriggerKeyCode = defaults.object(forKey: Keys.scrollTriggerKeyCode) as? Int64
             ?? Self.defaultScrollTriggerKeyCode
