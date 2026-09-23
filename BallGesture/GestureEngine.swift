@@ -200,10 +200,8 @@ final class GestureEngine: ObservableObject {
 
     private func scheduleRetry() {
         guard retryTimer == nil else { return }
-        retryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            Task { @MainActor [weak self] in
-                self?.start()
-            }
+        retryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.start() }
         }
     }
 
@@ -277,10 +275,8 @@ final class GestureEngine: ObservableObject {
     /// trackball driver utility injecting its own cursor position updates).
     private func startCursorPinTimer() {
         stopCursorPinTimer()
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in
-            Task { @MainActor [weak self] in
-                self?.pinCursorIfNeeded(source: "timer")
-            }
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pinCursorIfNeeded(source: "timer") }
         }
         RunLoop.main.add(timer, forMode: .common)
         cursorPinTimer = timer
@@ -485,10 +481,8 @@ final class GestureEngine: ObservableObject {
     /// decides whether that was a flick worth continuing as momentum.
     private func scheduleFlickDetection() {
         flickDetectionTimer?.invalidate()
-        let timer = Timer(timeInterval: Self.flickIdleDetectionInterval, repeats: false) { _ in
-            Task { @MainActor [weak self] in
-                self?.checkForFlick()
-            }
+        let timer = Timer(timeInterval: Self.flickIdleDetectionInterval, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkForFlick() }
         }
         RunLoop.main.add(timer, forMode: .common)
         flickDetectionTimer = timer
@@ -572,7 +566,9 @@ final class GestureEngine: ObservableObject {
         // warp) is fighting us for the cursor position and this needs a
         // different approach (e.g. warping repeatedly within the same
         // event, or coordinating with Mac Mouse Fix instead of overriding it).
-        Self.logger.notice(
+        // Debug level: this runs at ~60Hz while the cursor is pinned, too
+        // often to keep in the persisted log.
+        Self.logger.debug(
             "pinCursor[\(source, privacy: .public)]: before=\(String(describing: before), privacy: .public) locked=\(String(describing: locked), privacy: .public) warpResult=\(warpResult.rawValue, privacy: .public) after=\(String(describing: after), privacy: .public)"
         )
     }
@@ -593,14 +589,7 @@ final class GestureEngine: ObservableObject {
         let scrollX = Int32(rawScrollX.rounded())
         guard scrollY != 0 || scrollX != 0 else { return }
 
-        guard let scrollEvent = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .pixel,
-            wheelCount: 2,
-            wheel1: scrollY,
-            wheel2: scrollX,
-            wheel3: 0
-        ) else { return }
+        guard let scrollEvent = Self.pixelScrollEvent(x: scrollX, y: scrollY) else { return }
 
         // First event of a drag carries .began, the rest .changed — this is
         // a real trackpad-style scroll phase sequence (see
@@ -623,17 +612,15 @@ final class GestureEngine: ObservableObject {
         momentumPhase: MomentumScrollPhase?,
         tap: CGEventTapLocation = .cghidEventTap
     ) {
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .pixel,
-            wheelCount: 2,
-            wheel1: 0,
-            wheel2: 0,
-            wheel3: 0
-        ) else { return }
+        guard let event = Self.pixelScrollEvent(x: 0, y: 0) else { return }
 
         event.setScrollPhases(scrollPhase: scrollPhase, momentumPhase: momentumPhase)
         event.post(tap: tap)
+    }
+
+    /// A two-axis scroll event measured in pixels, the kind a trackpad sends.
+    private static func pixelScrollEvent(x: Int32, y: Int32) -> CGEvent? {
+        CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: y, wheel2: x, wheel3: 0)
     }
 
     /// Updates the exponential moving average of scroll speed (px/s) used
@@ -676,10 +663,8 @@ final class GestureEngine: ObservableObject {
             "speed=\(speed)px/s strength=\(settings.momentumStrength)"
         Self.logger.notice("\(startMessage, privacy: .public)")
 
-        let timer = Timer(timeInterval: Self.momentumTickInterval, repeats: true) { _ in
-            Task { @MainActor [weak self] in
-                self?.momentumTick()
-            }
+        let timer = Timer(timeInterval: Self.momentumTickInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.momentumTick() }
         }
         RunLoop.main.add(timer, forMode: .common)
         momentumTimer = timer
@@ -700,14 +685,7 @@ final class GestureEngine: ObservableObject {
 
         let scrollX = Int32((momentumVelocityX * Self.momentumTickInterval).rounded())
         let scrollY = Int32((momentumVelocityY * Self.momentumTickInterval).rounded())
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .pixel,
-            wheelCount: 2,
-            wheel1: scrollY,
-            wheel2: scrollX,
-            wheel3: 0
-        ) else { return }
+        guard let event = Self.pixelScrollEvent(x: scrollX, y: scrollY) else { return }
 
         let phase: MomentumScrollPhase = isFirstMomentumTick ? .begin : .continue
         isFirstMomentumTick = false
