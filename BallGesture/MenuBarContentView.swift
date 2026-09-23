@@ -5,8 +5,10 @@
 //  Content shown from the menu bar icon.
 //
 
+import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MenuBarContentView: View {
     @ObservedObject private var settings = AppSettings.shared
@@ -163,6 +165,7 @@ struct MenuBarContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Scroll Mode").font(.headline)
             Toggle("Natural scrolling direction", isOn: $settings.naturalScrollDirection)
+            reversedAppsList
             sensitivitySlider(title: "Sensitivity", value: $settings.scrollSensitivity)
             Toggle("Momentum scrolling", isOn: $settings.momentumScrollingEnabled)
             if settings.momentumScrollingEnabled {
@@ -172,6 +175,67 @@ struct MenuBarContentView: View {
                 }
             }
         }
+    }
+
+    private var reversedAppsList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Reverse direction in these apps").font(.caption)
+            ForEach(settings.reversedScrollBundleIDs, id: \.self) { bundleID in
+                HStack(spacing: 6) {
+                    Image(nsImage: Self.appIcon(for: bundleID))
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                    Text(Self.appName(for: bundleID))
+                        .lineLimit(1)
+                    Spacer()
+                    Button {
+                        settings.reversedScrollBundleIDs.removeAll { $0 == bundleID }
+                    } label: {
+                        Image(systemName: "minus.circle")
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .help("Remove")
+                }
+            }
+            Button("Add App…") {
+                addReversedApps()
+            }
+        }
+    }
+
+    private func addReversedApps() {
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.prompt = "Add"
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK else { return }
+
+        for url in panel.urls {
+            guard let bundleID = Bundle(url: url)?.bundleIdentifier,
+                  !settings.reversedScrollBundleIDs.contains(bundleID) else { continue }
+            settings.reversedScrollBundleIDs.append(bundleID)
+        }
+    }
+
+    private static func appName(for bundleID: String) -> String {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return bundleID
+        }
+        return FileManager.default.displayName(atPath: url.path)
+            .replacingOccurrences(of: ".app", with: "")
+    }
+
+    private static func appIcon(for bundleID: String) -> NSImage {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
+        }
+        return NSWorkspace.shared.icon(forFile: url.path)
     }
 
     private var zoomSection: some View {

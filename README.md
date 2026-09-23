@@ -59,6 +59,8 @@ Moving the ball scrolls instead of moving the pointer. The pointer stays where i
 
 Flick the ball — move it fast and then let go — and momentum scrolling takes over, the same feel as a trackpad flick. Momentum keeps running after you release F15. Moving the ball again during momentum returns you to normal scrolling; pressing F15 again or clicking stops it.
 
+Apps listed under **Reverse direction in these apps** scroll the other way. This helps in 3D viewers such as CAD tools and slicers, where the scroll wheel zooms and the global direction can feel backwards. The app that is frontmost when you press F15 decides the direction.
+
 ### Zoom Mode — hold F16
 
 Moving the ball zooms in and out. Three methods are available, because applications differ in what they accept:
@@ -94,6 +96,7 @@ Click the menu bar icon to open the settings popover.
 | Trigger keys | F15 / F16 / F17 | Any key; a key already in use cannot be reused |
 | Scroll sensitivity | 1.0 | 0.1 – 5.0 |
 | Natural scroll direction | On | — |
+| Reverse direction in these apps | None | Apps chosen from /Applications |
 | Momentum scrolling | On | — |
 | Momentum strength | 0.5 | 0.0 – 1.0 |
 | Zoom sensitivity | 1.0 | 0.1 – 5.0 |
@@ -208,6 +211,8 @@ Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開�
 
 ボールを弾く（勢いよく動かしてすぐ放す）と慣性スクロールに移行します。トラックパッドでフリックしたときと同じ感触です。慣性は F15 を離した後も続きます。慣性中にボールを動かせば通常のスクロールに戻り、F15 をもう一度押すかクリックすれば止まります。
 
+**Reverse direction in these apps** に登録したアプリでは、スクロールの向きが逆になります。CAD やスライサーなど、スクロールで拡大縮小する 3D 画面で向きが逆に感じるときに使います。F15 を押した瞬間に最前面にあるアプリで向きが決まります。
+
 ### Zoom Mode — F16 を押しながら
 
 ボールを動かすと拡大・縮小します。アプリによって受け付ける方式が違うため、3種類から選べます。
@@ -243,6 +248,7 @@ Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開�
 | トリガーキー | F15 / F16 / F17 | 任意のキー。他のモードで使用中のキーは選択不可 |
 | スクロール感度 | 1.0 | 0.1 – 5.0 |
 | ナチュラルスクロール方向 | オン | — |
+| 向きを逆にするアプリ | なし | /Applications から選択 |
 | 慣性スクロール | オン | — |
 | 慣性の強さ | 0.5 | 0.0 – 1.0 |
 | ズーム感度 | 1.0 | 0.1 – 5.0 |
