@@ -42,10 +42,13 @@ Requires Xcode. No Apple Developer account needed.
 ```sh
 git clone https://github.com/noki1213/BallGesture.git
 cd BallGesture
-./install.sh
+xcodebuild -scheme BallGesture -configuration Release -derivedDataPath build \
+  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
+rm -rf /Applications/BallGesture.app
+cp -R build/Build/Products/Release/BallGesture.app /Applications/
 ```
 
-`install.sh` builds an unsigned Release build and installs it to `/Applications`. Because you built it locally, macOS does not quarantine it and there is no first-launch prompt.
+This builds a Release build signed for your Mac alone (ad-hoc, no account involved) and copies it to Applications, replacing any older copy — quit the app first if it is running. Because you built it locally, macOS does not quarantine it and there is no first-launch prompt.
 
 To build from the Xcode GUI instead, open `BallGesture.xcodeproj` and build the BallGesture scheme. Signing is left unset in the project, so Xcode will sign it to run locally without asking for an account.
 
@@ -194,10 +197,13 @@ Xcode が必要です。Apple Developer アカウントは不要です。
 ```sh
 git clone https://github.com/noki1213/BallGesture.git
 cd BallGesture
-./install.sh
+xcodebuild -scheme BallGesture -configuration Release -derivedDataPath build \
+  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
+rm -rf /Applications/BallGesture.app
+cp -R build/Build/Products/Release/BallGesture.app /Applications/
 ```
 
-`install.sh` は未署名の Release ビルドを作成して `/Applications` にインストールします。自分でビルドしたアプリは macOS に隔離されないため、初回起動の確認は出ません。
+この Mac 専用の署名（アカウント不要のアドホック署名）を付けた Release ビルドを作り、アプリケーションフォルダにコピーします。古いものがあれば置き換えるので、起動中なら先に終了してください。自分でビルドしたアプリは macOS に隔離されないため、初回起動の確認は出ません。
 
 Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開いて BallGesture スキームをビルドしてください。プロジェクト側で署名の設定を空にしてあるので、アカウントを求められることなくローカル実行用の署名が付きます。
 
