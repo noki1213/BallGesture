@@ -74,6 +74,13 @@ final class GestureEngine: ObservableObject {
     /// Mac Mouse Fix's events don't carry deltas.
     private var lastDeltaTrackingPosition: CGPoint?
 
+    /// Trigger keys the HID system reported as held when their mode started.
+    /// For these, a later "not held" reading is trustworthy, so a mode whose
+    /// keyUp never reached the tap (the tap is disabled by timeout while the
+    /// system is under heavy load, and events in that window bypass it) can
+    /// be ended instead of turning ordinary pointer movement into scrolling.
+    private var verifiableTriggerKeyCodes: Set<Int64> = []
+
     // MARK: Momentum scrolling
     //
     // Momentum is triggered by detecting a FLICK, not by releasing the
@@ -297,6 +304,7 @@ final class GestureEngine: ObservableObject {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
+            endModesWhoseTriggerWasReleased()
             return Unmanaged.passRetained(event)
         }
 
@@ -324,15 +332,12 @@ final class GestureEngine: ObservableObject {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
-        // Diagnostic: log every keyDown/keyUp the tap sees, so it's possible
-        // to tell from `log show --predicate 'process == "BallGesture"'`
-        // (no extra flags needed — this is logged at .notice, which is
-        // persisted and shown by default, unlike .debug/.info) whether a
-        // given physical key press (e.g. a ZMK/cornix combo sending F15)
-        // reaches the tap at all, and whether it arrives as a real hold
-        // (keyDown ... time passes ... keyUp) or as an instant tap (keyDown
-        // immediately followed by keyUp).
-        Self.logger.notice(
+        // Diagnostic: shows whether a given physical key press (e.g. a
+        // keyboard combo sending F15) reaches the tap at all, and whether it
+        // arrives as a real hold or as an instant tap. Debug level: every
+        // keystroke on the system passes through here, and the callback must
+        // stay light so the tap is not disabled by timeout under load.
+        Self.logger.debug(
             "\(type == .keyDown ? "keyDown" : "keyUp", privacy: .public) keyCode=\(keyCode, privacy: .public) repeat=\(isRepeat, privacy: .public)"
         )
 
@@ -367,21 +372,10 @@ final class GestureEngine: ObservableObject {
                     .map(settings.reversedScrollBundleIDs.contains) ?? false
                 resetScrollVelocityTracking()
                 disassociateCursor()
+                recordTriggerVerifiability(keyCode)
                 Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             } else if type == .keyUp, scrollActive {
-                scrollActive = false
-                reassociateCursor()
-                if !momentumActive {
-                    // No flick was detected while the key was held, so this
-                    // release is the natural end of the drag gesture.
-                    postScrollPhaseMarker(scrollPhase: .ended, momentumPhase: nil)
-                }
-                // Deliberately NOT starting or stopping momentum here — see
-                // the "Momentum scrolling" MARK above. If a flick was
-                // already detected mid-hold, momentum keeps running
-                // independently of this key release (so flick-then-release
-                // works naturally); if not, nothing further happens.
-                Self.logger.notice("Scroll Mode ENDED (keyCode=\(keyCode, privacy: .public)).")
+                endScrollMode(reason: "keyUp")
             }
             return nil
         }
@@ -390,13 +384,11 @@ final class GestureEngine: ObservableObject {
             if type == .keyDown, !zoomActive {
                 zoomActive = true
                 disassociateCursor()
+                recordTriggerVerifiability(keyCode)
                 postZoomEvent(phase: .began, magnification: 0)
                 Self.logger.notice("Zoom Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             } else if type == .keyUp, zoomActive {
-                postZoomEvent(phase: .ended, magnification: 0)
-                zoomActive = false
-                reassociateCursor()
-                Self.logger.notice("Zoom Mode ENDED (keyCode=\(keyCode, privacy: .public)).")
+                endZoomMode(reason: "keyUp")
             }
             return nil
         }
@@ -408,11 +400,10 @@ final class GestureEngine: ObservableObject {
                 gestureAccumulatedY = 0.0
                 hasTriggeredGesture = false
                 disassociateCursor()
+                recordTriggerVerifiability(keyCode)
                 Self.logger.notice("Gesture Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             } else if type == .keyUp, gestureActive {
-                gestureActive = false
-                reassociateCursor()
-                Self.logger.notice("Gesture Mode ENDED (keyCode=\(keyCode, privacy: .public)).")
+                endGestureMode(reason: "keyUp")
             }
             return nil
         }
@@ -420,7 +411,76 @@ final class GestureEngine: ObservableObject {
         return Unmanaged.passRetained(event)
     }
 
+    private func endScrollMode(reason: String) {
+        scrollActive = false
+        verifiableTriggerKeyCodes.remove(settings.scrollTriggerKeyCode)
+        reassociateCursor()
+        if !momentumActive {
+            // No flick was detected while the key was held, so this
+            // release is the natural end of the drag gesture.
+            postScrollPhaseMarker(scrollPhase: .ended, momentumPhase: nil)
+        }
+        // Deliberately NOT starting or stopping momentum here — see
+        // the "Momentum scrolling" MARK above. If a flick was
+        // already detected mid-hold, momentum keeps running
+        // independently of this key release (so flick-then-release
+        // works naturally); if not, nothing further happens.
+        Self.logger.notice("Scroll Mode ENDED (\(reason, privacy: .public)).")
+    }
+
+    private func endZoomMode(reason: String) {
+        postZoomEvent(phase: .ended, magnification: 0)
+        zoomActive = false
+        verifiableTriggerKeyCodes.remove(settings.zoomTriggerKeyCode)
+        reassociateCursor()
+        Self.logger.notice("Zoom Mode ENDED (\(reason, privacy: .public)).")
+    }
+
+    private func endGestureMode(reason: String) {
+        gestureActive = false
+        verifiableTriggerKeyCodes.remove(settings.gestureTriggerKeyCode)
+        reassociateCursor()
+        Self.logger.notice("Gesture Mode ENDED (\(reason, privacy: .public)).")
+    }
+
+    private static func isKeyPhysicallyHeld(_ keyCode: Int64) -> Bool {
+        CGEventSource.keyState(.hidSystemState, key: CGKeyCode(truncatingIfNeeded: keyCode))
+    }
+
+    /// Only trusts the HID key state for a trigger if it reads as held right
+    /// when its keyDown arrives; a key delivered some other way (e.g. posted
+    /// by software) may never show up there, and must not end its mode early.
+    private func recordTriggerVerifiability(_ keyCode: Int64) {
+        if Self.isKeyPhysicallyHeld(keyCode) {
+            verifiableTriggerKeyCodes.insert(keyCode)
+        } else {
+            verifiableTriggerKeyCodes.remove(keyCode)
+        }
+    }
+
+    /// Ends any active mode whose trigger key is no longer held even though
+    /// its keyUp never arrived.
+    private func endModesWhoseTriggerWasReleased() {
+        func released(_ keyCode: Int64) -> Bool {
+            verifiableTriggerKeyCodes.contains(keyCode) && !Self.isKeyPhysicallyHeld(keyCode)
+        }
+        if scrollActive, released(settings.scrollTriggerKeyCode) {
+            cancelFlickDetection()
+            resetScrollVelocityTracking()
+            endScrollMode(reason: "trigger no longer held, keyUp missed")
+        }
+        if zoomActive, released(settings.zoomTriggerKeyCode) {
+            endZoomMode(reason: "trigger no longer held, keyUp missed")
+        }
+        if gestureActive, released(settings.gestureTriggerKeyCode) {
+            endGestureMode(reason: "trigger no longer held, keyUp missed")
+        }
+    }
+
     private func handleMouseMoved(event: CGEvent) -> Unmanaged<CGEvent>? {
+        if scrollActive || zoomActive || gestureActive {
+            endModesWhoseTriggerWasReleased()
+        }
         if scrollActive {
             if momentumActive {
                 // The ball was flicked (momentum already started) but has
@@ -519,8 +579,8 @@ final class GestureEngine: ObservableObject {
     /// to carry non-zero delta fields the way raw HID movement does. When
     /// both deltas are zero, this falls back to the position change since
     /// the last event as the delta instead, so Scroll/Zoom Mode keeps
-    /// working either way. Logged every time so a real device can confirm
-    /// whether raw deltas are actually arriving as zero.
+    /// working either way. Logged at debug level on every event so a real
+    /// device can confirm whether raw deltas are actually arriving as zero.
     private func effectiveDelta(from event: CGEvent) -> (dx: Double, dy: Double) {
         let rawDX = event.getIntegerValueField(.mouseEventDeltaX)
         let rawDY = event.getIntegerValueField(.mouseEventDeltaY)
@@ -537,7 +597,7 @@ final class GestureEngine: ObservableObject {
 
         let message = "delta: raw=(\(rawDX),\(rawDY)) current=\(current) last=" +
             "\(String(describing: lastDeltaTrackingPosition)) fallback=\(usedFallback) effective=(\(dx),\(dy))"
-        Self.logger.notice("\(message, privacy: .public)")
+        Self.logger.debug("\(message, privacy: .public)")
 
         lastDeltaTrackingPosition = current
         return (dx, dy)
