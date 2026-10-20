@@ -114,8 +114,9 @@ final class GestureEngine: ObservableObject {
     private var isFirstMomentumTick = true
     private var isFirstScrollEventOfDrag = true
     /// Whether the app that was frontmost when Scroll Mode started is listed
-    /// in `reversedScrollBundleIDs`. Fixed for the whole drag (and its
-    /// momentum) so the direction never flips mid-gesture.
+    /// in `reversedScrollBundleIDs` and the pointer is over that app's main
+    /// window (see `isPointerOverMainWindow`). Fixed for the whole drag (and
+    /// its momentum) so the direction never flips mid-gesture.
     private var scrollDirectionReversed = false
 
     /// Fires once mouseMoved events stop arriving for this long during
@@ -368,10 +369,9 @@ final class GestureEngine: ObservableObject {
                 cancelFlickDetection()
                 scrollActive = true
                 isFirstScrollEventOfDrag = true
-                scrollDirectionReversed = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-                    .map(settings.reversedScrollBundleIDs.contains) ?? false
                 resetScrollVelocityTracking()
                 disassociateCursor()
+                scrollDirectionReversed = shouldReverseScroll(at: currentCursorPosition())
                 recordTriggerVerifiability(keyCode)
                 Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public), frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil", privacy: .public), reversed=\(self.scrollDirectionReversed, privacy: .public)).")
             } else if type == .keyUp, scrollActive {
@@ -441,6 +441,42 @@ final class GestureEngine: ObservableObject {
         verifiableTriggerKeyCodes.remove(settings.gestureTriggerKeyCode)
         reassociateCursor()
         Self.logger.notice("Gesture Mode ENDED (\(reason, privacy: .public)).")
+    }
+
+    private func shouldReverseScroll(at point: CGPoint) -> Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              let bundleID = app.bundleIdentifier,
+              settings.reversedScrollBundleIDs.contains(bundleID) else { return false }
+        return Self.isPointerOverMainWindow(of: app.processIdentifier, at: point)
+    }
+
+    /// Whether the topmost window under `point` is the largest normal window
+    /// of `pid`. 3D apps keep their viewport in that window, while dialogs
+    /// and floating palettes (settings, property panels) hold ordinary lists
+    /// that should keep the global scroll direction.
+    private static func isPointerOverMainWindow(of pid: pid_t, at point: CGPoint) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else { return true }
+
+        func bounds(_ window: [String: Any]) -> CGRect? {
+            guard let dict = window[kCGWindowBounds as String] as? NSDictionary else { return nil }
+            return CGRect(dictionaryRepresentation: dict as CFDictionary)
+        }
+        func number(_ window: [String: Any]) -> Int? {
+            window[kCGWindowNumber as String] as? Int
+        }
+
+        let ownWindows = windows.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid }
+        let mainWindow = ownWindows
+            .filter { ($0[kCGWindowLayer as String] as? Int) == 0 }
+            .max { (bounds($0).map { $0.width * $0.height } ?? 0) < (bounds($1).map { $0.width * $0.height } ?? 0) }
+        // The list is ordered front to back, so the first hit is what the
+        // pointer is actually over.
+        let hit = ownWindows.first { bounds($0)?.contains(point) ?? false }
+
+        guard let mainWindow, let hit else { return false }
+        return number(hit) == number(mainWindow)
     }
 
     private static func isKeyPhysicallyHeld(_ keyCode: Int64) -> Bool {
