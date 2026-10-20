@@ -26,11 +26,101 @@ enum ZoomMethod: String, CaseIterable, Identifiable {
     }
 }
 
+/// A view operation in 3D apps (CAD, slicers, WebGL viewers), each held on its own trigger key.
+enum ThreeDAction: String, CaseIterable, Identifiable, Codable {
+    case pan
+    case zoom
+    case rotate
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .pan: return "Pan"
+        case .zoom: return "Zoom"
+        case .rotate: return "Rotate"
+        }
+    }
+}
+
+/// What a 3D trigger key turns pointer movement into.
+enum ThreeDOutput: String, CaseIterable, Identifiable, Codable {
+    case leftDrag
+    case rightDrag
+    case middleDrag
+    case shiftMiddleDrag
+    case scroll
+    case shiftScroll
+    case pinch
+    case wheel
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .leftDrag: return "Left Drag"
+        case .rightDrag: return "Right Drag"
+        case .middleDrag: return "Middle Drag"
+        case .shiftMiddleDrag: return "Shift + Middle Drag"
+        case .scroll: return "Scroll"
+        case .shiftScroll: return "Shift + Scroll"
+        case .pinch: return "Pinch"
+        case .wheel: return "Wheel"
+        }
+    }
+}
+
+struct ThreeDBinding: Codable, Equatable {
+    var output: ThreeDOutput
+    /// Flips both axes of the movement.
+    var reversed = false
+}
+
+/// The output for each 3D action, either the default set or one app's override.
+struct ThreeDProfile: Codable, Equatable {
+    var pan: ThreeDBinding
+    var zoom: ThreeDBinding
+    var rotate: ThreeDBinding
+
+    /// Right drag pans, the wheel zooms and left drag orbits: the mouse
+    /// layout shared by most slicers, OpenSCAD and three.js OrbitControls.
+    static let standard = ThreeDProfile(
+        pan: ThreeDBinding(output: .rightDrag),
+        zoom: ThreeDBinding(output: .wheel),
+        rotate: ThreeDBinding(output: .leftDrag)
+    )
+
+    subscript(action: ThreeDAction) -> ThreeDBinding {
+        get {
+            switch action {
+            case .pan: return pan
+            case .zoom: return zoom
+            case .rotate: return rotate
+            }
+        }
+        set {
+            switch action {
+            case .pan: pan = newValue
+            case .zoom: zoom = newValue
+            case .rotate: rotate = newValue
+            }
+        }
+    }
+}
+
+struct ThreeDAppProfile: Codable, Equatable, Identifiable {
+    var bundleID: String
+    var profile: ThreeDProfile
+
+    var id: String { bundleID }
+}
+
 /// Which trigger key is currently being (re)captured from the "Set Key" UI.
-enum KeyCaptureTarget {
+enum KeyCaptureTarget: Equatable {
     case scrollTrigger
     case zoomTrigger
     case gestureTrigger
+    case threeDTrigger(ThreeDAction)
 }
 
 @MainActor
@@ -49,12 +139,24 @@ final class AppSettings: ObservableObject {
         static let zoomTriggerKeyCode = "BallGesture.zoomTriggerKeyCode"
         static let gestureTriggerKeyCode = "BallGesture.gestureTriggerKeyCode"
         static let gestureDistance = "BallGesture.gestureDistance"
-        static let reversedScrollBundleIDs = "BallGesture.reversedScrollBundleIDs"
+        static let threeDSensitivity = "BallGesture.threeDSensitivity"
+        static let threeDDefaultProfile = "BallGesture.threeDDefaultProfile"
+        static let threeDAppProfiles = "BallGesture.threeDAppProfiles"
+        static func threeDTriggerKeyCode(_ action: ThreeDAction) -> String {
+            "BallGesture.threeDTriggerKeyCode.\(action.rawValue)"
+        }
     }
 
     static let defaultScrollTriggerKeyCode = Int64(kVK_F15) // 113
     static let defaultZoomTriggerKeyCode = Int64(kVK_F16)   // 106
     static let defaultGestureTriggerKeyCode = Int64(64)     // F17
+    static func defaultThreeDTriggerKeyCode(_ action: ThreeDAction) -> Int64 {
+        switch action {
+        case .pan: return Int64(kVK_F18)
+        case .zoom: return Int64(kVK_F19)
+        case .rotate: return Int64(kVK_F20)
+        }
+    }
 
     private let defaults: UserDefaults
 
@@ -87,11 +189,17 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(gestureDistance, forKey: Keys.gestureDistance) }
     }
 
-    /// Apps in which Scroll Mode runs opposite to `naturalScrollDirection`,
-    /// e.g. 3D viewers where the scroll wheel zooms and the global direction
-    /// feels backwards.
-    @Published var reversedScrollBundleIDs: [String] {
-        didSet { defaults.set(reversedScrollBundleIDs, forKey: Keys.reversedScrollBundleIDs) }
+    @Published var threeDSensitivity: Double {
+        didSet { defaults.set(threeDSensitivity, forKey: Keys.threeDSensitivity) }
+    }
+
+    /// Used in every app without its own entry in `threeDAppProfiles`.
+    @Published var threeDDefaultProfile: ThreeDProfile {
+        didSet { Self.store(threeDDefaultProfile, in: defaults, forKey: Keys.threeDDefaultProfile) }
+    }
+
+    @Published var threeDAppProfiles: [ThreeDAppProfile] {
+        didSet { Self.store(threeDAppProfiles, in: defaults, forKey: Keys.threeDAppProfiles) }
     }
 
     @Published var zoomMethod: ZoomMethod {
@@ -110,6 +218,14 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(gestureTriggerKeyCode, forKey: Keys.gestureTriggerKeyCode) }
     }
 
+    @Published private(set) var threeDTriggerKeyCodes: [ThreeDAction: Int64] {
+        didSet {
+            for (action, keyCode) in threeDTriggerKeyCodes {
+                defaults.set(keyCode, forKey: Keys.threeDTriggerKeyCode(action))
+            }
+        }
+    }
+
     /// Non-persisted UI state: which trigger key is currently being captured.
     @Published var captureTarget: KeyCaptureTarget?
     /// Non-persisted UI state: message shown when a capture attempt is rejected.
@@ -125,7 +241,11 @@ final class AppSettings: ObservableObject {
         momentumScrollingEnabled = defaults.object(forKey: Keys.momentumScrollingEnabled) as? Bool ?? true
         momentumStrength = defaults.object(forKey: Keys.momentumStrength) as? Double ?? 0.5
         gestureDistance = defaults.object(forKey: Keys.gestureDistance) as? Double ?? 50.0
-        reversedScrollBundleIDs = defaults.stringArray(forKey: Keys.reversedScrollBundleIDs) ?? []
+        threeDSensitivity = defaults.object(forKey: Keys.threeDSensitivity) as? Double ?? 1.0
+        threeDDefaultProfile = Self.load(ThreeDProfile.self, from: defaults, forKey: Keys.threeDDefaultProfile)
+            ?? .standard
+        threeDAppProfiles = Self.load([ThreeDAppProfile].self, from: defaults, forKey: Keys.threeDAppProfiles)
+            ?? []
         zoomMethod = ZoomMethod(rawValue: defaults.string(forKey: Keys.zoomMethod) ?? "") ?? .pinch
         scrollTriggerKeyCode = defaults.object(forKey: Keys.scrollTriggerKeyCode) as? Int64
             ?? Self.defaultScrollTriggerKeyCode
@@ -133,6 +253,42 @@ final class AppSettings: ObservableObject {
             ?? Self.defaultZoomTriggerKeyCode
         gestureTriggerKeyCode = defaults.object(forKey: Keys.gestureTriggerKeyCode) as? Int64
             ?? Self.defaultGestureTriggerKeyCode
+        var threeDKeys: [ThreeDAction: Int64] = [:]
+        for action in ThreeDAction.allCases {
+            threeDKeys[action] = defaults.object(forKey: Keys.threeDTriggerKeyCode(action)) as? Int64
+                ?? Self.defaultThreeDTriggerKeyCode(action)
+        }
+        threeDTriggerKeyCodes = threeDKeys
+    }
+
+    func threeDTriggerKeyCode(for action: ThreeDAction) -> Int64 {
+        threeDTriggerKeyCodes[action] ?? Self.defaultThreeDTriggerKeyCode(action)
+    }
+
+    /// The 3D action bound to `keyCode`, if any.
+    func threeDAction(forKeyCode keyCode: Int64) -> ThreeDAction? {
+        ThreeDAction.allCases.first { threeDTriggerKeyCode(for: $0) == keyCode }
+    }
+
+    /// The profile for `bundleID`, falling back to the default profile.
+    func threeDProfile(forBundleID bundleID: String?) -> ThreeDProfile {
+        threeDAppProfiles.first { $0.bundleID == bundleID }?.profile ?? threeDDefaultProfile
+    }
+
+    /// Adds an app override, starting from a copy of the default profile.
+    func addThreeDAppProfile(bundleID: String) {
+        guard !threeDAppProfiles.contains(where: { $0.bundleID == bundleID }) else { return }
+        threeDAppProfiles.append(ThreeDAppProfile(bundleID: bundleID, profile: threeDDefaultProfile))
+    }
+
+    private static func store<T: Encodable>(_ value: T, in defaults: UserDefaults, forKey key: String) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        defaults.set(data, forKey: key)
+    }
+
+    private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
     }
 
     /// Starts capturing the next pressed key for the given target.
@@ -152,11 +308,14 @@ final class AppSettings: ObservableObject {
     func handleCapturedKeyCode(_ keyCode: Int64) -> Bool {
         guard let target = captureTarget else { return false }
 
-        let otherKeys: [(KeyCaptureTarget, Int64, String)] = [
+        let assignedKeys: [(KeyCaptureTarget, Int64, String)] = [
             (.scrollTrigger, scrollTriggerKeyCode, "Scroll Mode"),
             (.zoomTrigger, zoomTriggerKeyCode, "Zoom Mode"),
             (.gestureTrigger, gestureTriggerKeyCode, "Gesture Mode")
-        ].filter { $0.0 != target }
+        ] + ThreeDAction.allCases.map {
+            (.threeDTrigger($0), threeDTriggerKeyCode(for: $0), "3D \($0.displayName)")
+        }
+        let otherKeys = assignedKeys.filter { $0.0 != target }
 
         for (_, otherKeyCode, otherName) in otherKeys {
             if keyCode == otherKeyCode {
@@ -170,6 +329,7 @@ final class AppSettings: ObservableObject {
         case .scrollTrigger: scrollTriggerKeyCode = keyCode
         case .zoomTrigger: zoomTriggerKeyCode = keyCode
         case .gestureTrigger: gestureTriggerKeyCode = keyCode
+        case .threeDTrigger(let action): threeDTriggerKeyCodes[action] = keyCode
         }
         captureErrorMessage = nil
         captureTarget = nil

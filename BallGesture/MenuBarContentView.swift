@@ -15,7 +15,9 @@ struct MenuBarContentView: View {
     @ObservedObject private var engine = GestureEngine.shared
     @State private var isAccessibilityTrusted = AccessibilityPermission.isTrusted
     @State private var resetCommandCopied = false
-    @State private var isAddingReversedApp = false
+    @State private var isAddingThreeDApp = false
+    /// Bundle ID of the app whose 3D settings are shown; empty for the default set.
+    @State private var selectedThreeDApp = ""
 
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -42,6 +44,10 @@ struct MenuBarContentView: View {
             Divider()
 
             gestureSection
+
+            Divider()
+
+            threeDSection
 
             Divider()
 
@@ -132,6 +138,13 @@ struct MenuBarContentView: View {
             keyRow(title: "Scroll Mode", keyCode: settings.scrollTriggerKeyCode, target: .scrollTrigger)
             keyRow(title: "Zoom Mode", keyCode: settings.zoomTriggerKeyCode, target: .zoomTrigger)
             keyRow(title: "Gesture Mode", keyCode: settings.gestureTriggerKeyCode, target: .gestureTrigger)
+            ForEach(ThreeDAction.allCases) { action in
+                keyRow(
+                    title: "3D \(action.displayName)",
+                    keyCode: settings.threeDTriggerKeyCode(for: action),
+                    target: .threeDTrigger(action)
+                )
+            }
 
             if let message = settings.captureErrorMessage {
                 Text(message)
@@ -166,7 +179,6 @@ struct MenuBarContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Scroll Mode").font(.headline)
             Toggle("Natural scrolling direction", isOn: $settings.naturalScrollDirection)
-            reversedAppsList
             sensitivitySlider(title: "Sensitivity", value: $settings.scrollSensitivity)
             Toggle("Momentum scrolling", isOn: $settings.momentumScrollingEnabled)
             if settings.momentumScrollingEnabled {
@@ -178,36 +190,82 @@ struct MenuBarContentView: View {
         }
     }
 
-    private var reversedAppsList: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Reverse direction in these apps").font(.caption)
-            ForEach(settings.reversedScrollBundleIDs, id: \.self) { bundleID in
-                HStack(spacing: 6) {
-                    Image(nsImage: Self.appIcon(for: bundleID))
-                        .resizable()
-                        .frame(width: 16, height: 16)
-                    Text(Self.appName(for: bundleID))
-                        .lineLimit(1)
-                    Spacer()
-                    Button {
-                        settings.reversedScrollBundleIDs.removeAll { $0 == bundleID }
-                    } label: {
-                        Image(systemName: "minus.circle")
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .help("Remove")
+    private var threeDSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("3D Mode").font(.headline)
+            Picker("Settings for", selection: $selectedThreeDApp) {
+                Text("All Apps").tag("")
+                ForEach(settings.threeDAppProfiles) { app in
+                    Text(Self.appName(for: app.bundleID)).tag(app.bundleID)
                 }
             }
-            Button(isAddingReversedApp ? "Done" : "Add App…") {
-                isAddingReversedApp.toggle()
+            .pickerStyle(.menu)
+            ForEach(ThreeDAction.allCases) { action in
+                HStack(spacing: 6) {
+                    Text(action.displayName)
+                        .frame(width: 52, alignment: .leading)
+                    Picker("", selection: outputBinding(for: action)) {
+                        ForEach(ThreeDOutput.allCases) { output in
+                            Text(output.displayName).tag(output)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    Toggle("Reverse", isOn: reversedBinding(for: action))
+                }
             }
-            if isAddingReversedApp {
+            HStack {
+                Button(isAddingThreeDApp ? "Done" : "Add App…") {
+                    isAddingThreeDApp.toggle()
+                }
+                if !selectedThreeDApp.isEmpty {
+                    Button("Remove App") {
+                        settings.threeDAppProfiles.removeAll { $0.bundleID == selectedThreeDApp }
+                        selectedThreeDApp = ""
+                    }
+                }
+            }
+            if isAddingThreeDApp {
                 runningAppsToAdd
             }
+            sensitivitySlider(title: "Sensitivity", value: $settings.threeDSensitivity)
         }
+    }
+
+    /// The profile being edited: the selected app's override, or the default set.
+    private var selectedProfile: Binding<ThreeDProfile> {
+        Binding(
+            get: { settings.threeDAppProfiles.first { $0.bundleID == selectedThreeDApp }?.profile
+                ?? settings.threeDDefaultProfile },
+            set: { profile in
+                if let index = settings.threeDAppProfiles.firstIndex(where: { $0.bundleID == selectedThreeDApp }) {
+                    settings.threeDAppProfiles[index].profile = profile
+                } else {
+                    settings.threeDDefaultProfile = profile
+                }
+            }
+        )
+    }
+
+    private func outputBinding(for action: ThreeDAction) -> Binding<ThreeDOutput> {
+        let profile = selectedProfile
+        return Binding(
+            get: { profile.wrappedValue[action].output },
+            set: { profile.wrappedValue[action].output = $0 }
+        )
+    }
+
+    private func reversedBinding(for action: ThreeDAction) -> Binding<Bool> {
+        let profile = selectedProfile
+        return Binding(
+            get: { profile.wrappedValue[action].reversed },
+            set: { profile.wrappedValue[action].reversed = $0 }
+        )
+    }
+
+    private func addThreeDApp(bundleID: String) {
+        settings.addThreeDAppProfile(bundleID: bundleID)
+        selectedThreeDApp = bundleID
     }
 
     /// Running apps are offered first because some apps (Autodesk Fusion,
@@ -226,7 +284,7 @@ struct MenuBarContentView: View {
                     Spacer()
                     Button {
                         if let bundleID = app.bundleIdentifier {
-                            settings.reversedScrollBundleIDs.append(bundleID)
+                            addThreeDApp(bundleID: bundleID)
                         }
                     } label: {
                         Image(systemName: "plus.circle")
@@ -239,14 +297,14 @@ struct MenuBarContentView: View {
                 }
             }
             Button("Other…") {
-                addReversedApps()
+                chooseThreeDApps()
             }
         }
         .padding(.leading, 8)
     }
 
     private var addableRunningApps: [NSRunningApplication] {
-        var seen = Set(settings.reversedScrollBundleIDs)
+        var seen = Set(settings.threeDAppProfiles.map(\.bundleID))
         seen.insert(Bundle.main.bundleIdentifier ?? "")
         return NSWorkspace.shared.runningApplications
             .filter { app in
@@ -259,7 +317,7 @@ struct MenuBarContentView: View {
             }
     }
 
-    private func addReversedApps() {
+    private func chooseThreeDApps() {
         let panel = NSOpenPanel()
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.allowedContentTypes = [.application]
@@ -270,9 +328,8 @@ struct MenuBarContentView: View {
         guard panel.runModal() == .OK else { return }
 
         for url in panel.urls {
-            guard let bundleID = Bundle(url: url)?.bundleIdentifier,
-                  !settings.reversedScrollBundleIDs.contains(bundleID) else { continue }
-            settings.reversedScrollBundleIDs.append(bundleID)
+            guard let bundleID = Bundle(url: url)?.bundleIdentifier else { continue }
+            addThreeDApp(bundleID: bundleID)
         }
     }
 
