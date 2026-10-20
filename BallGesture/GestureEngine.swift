@@ -373,7 +373,7 @@ final class GestureEngine: ObservableObject {
                 resetScrollVelocityTracking()
                 disassociateCursor()
                 recordTriggerVerifiability(keyCode)
-                Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
+                Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public), frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil", privacy: .public), reversed=\(self.scrollDirectionReversed, privacy: .public)).")
             } else if type == .keyUp, scrollActive {
                 endScrollMode(reason: "keyUp")
             }
