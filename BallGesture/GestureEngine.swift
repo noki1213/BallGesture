@@ -3,10 +3,13 @@
 //  BallGesture
 //
 //  Owns the CGEventTap and turns mouse movement, while a trigger key is held,
-//  into scroll events (Scroll Mode) or pinch/zoom events (Zoom Mode).
+//  into scroll events (Scroll Mode), pinch/zoom events (Zoom Mode), system
+//  gestures (Gesture Mode), or the drags, scrolls and pinches a 3D view uses
+//  to pan, zoom and rotate (3D Mode).
 //
 
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import CoreGraphics
 import os
@@ -81,6 +84,24 @@ final class GestureEngine: ObservableObject {
     /// be ended instead of turning ordinary pointer movement into scrolling.
     private var verifiableTriggerKeyCodes: Set<Int64> = []
 
+    /// One hold of a 3D trigger key. The binding is resolved from the
+    /// frontmost app once, at keyDown, so the output never changes mid-drag.
+    private struct ThreeDSession {
+        let action: ThreeDAction
+        let keyCode: Int64
+        let binding: ThreeDBinding
+        /// Where the pointer was at keyDown; it returns here at keyUp.
+        let origin: CGPoint
+        /// Where the synthesized drag currently is.
+        var position: CGPoint
+        var isFirstScrollEvent = true
+        /// Fractional wheel notches not yet posted.
+        var wheelRemainder = 0.0
+    }
+    private var threeDSession: ThreeDSession?
+    /// Pointer movement (px, after sensitivity) per wheel notch in 3D Mode.
+    private static let threeDWheelStep = 8.0
+
     // MARK: Momentum scrolling
     //
     // Momentum is triggered by detecting a FLICK, not by releasing the
@@ -113,11 +134,6 @@ final class GestureEngine: ObservableObject {
     private var momentumTimer: Timer?
     private var isFirstMomentumTick = true
     private var isFirstScrollEventOfDrag = true
-    /// Whether the app that was frontmost when Scroll Mode started is listed
-    /// in `reversedScrollBundleIDs` and the pointer is over that app's main
-    /// window (see `isPointerOverMainWindow`). Fixed for the whole drag (and
-    /// its momentum) so the direction never flips mid-gesture.
-    private var scrollDirectionReversed = false
 
     /// Fires once mouseMoved events stop arriving for this long during
     /// Scroll Mode; if the tracked speed at that point is still above
@@ -246,6 +262,9 @@ final class GestureEngine: ObservableObject {
             reassociateCursor()
             gestureActive = false
         }
+        if threeDSession != nil {
+            endThreeDMode(reason: "app terminating")
+        }
         if momentumActive {
             stopMomentum(reason: "app terminating")
         }
@@ -371,9 +390,8 @@ final class GestureEngine: ObservableObject {
                 isFirstScrollEventOfDrag = true
                 resetScrollVelocityTracking()
                 disassociateCursor()
-                scrollDirectionReversed = shouldReverseScroll(at: currentCursorPosition())
                 recordTriggerVerifiability(keyCode)
-                Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public), frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil", privacy: .public), reversed=\(self.scrollDirectionReversed, privacy: .public)).")
+                Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             } else if type == .keyUp, scrollActive {
                 endScrollMode(reason: "keyUp")
             }
@@ -404,6 +422,15 @@ final class GestureEngine: ObservableObject {
                 Self.logger.notice("Gesture Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             } else if type == .keyUp, gestureActive {
                 endGestureMode(reason: "keyUp")
+            }
+            return nil
+        }
+
+        if let action = settings.threeDAction(forKeyCode: keyCode) {
+            if type == .keyDown, threeDSession?.action != action {
+                beginThreeDMode(action, keyCode: keyCode)
+            } else if type == .keyUp, threeDSession?.action == action {
+                endThreeDMode(reason: "keyUp")
             }
             return nil
         }
@@ -443,42 +470,6 @@ final class GestureEngine: ObservableObject {
         Self.logger.notice("Gesture Mode ENDED (\(reason, privacy: .public)).")
     }
 
-    private func shouldReverseScroll(at point: CGPoint) -> Bool {
-        guard let app = NSWorkspace.shared.frontmostApplication,
-              let bundleID = app.bundleIdentifier,
-              settings.reversedScrollBundleIDs.contains(bundleID) else { return false }
-        return Self.isPointerOverMainWindow(of: app.processIdentifier, at: point)
-    }
-
-    /// Whether the topmost window under `point` is the largest normal window
-    /// of `pid`. 3D apps keep their viewport in that window, while dialogs
-    /// and floating palettes (settings, property panels) hold ordinary lists
-    /// that should keep the global scroll direction.
-    private static func isPointerOverMainWindow(of pid: pid_t, at point: CGPoint) -> Bool {
-        guard let windows = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
-        ) as? [[String: Any]] else { return true }
-
-        func bounds(_ window: [String: Any]) -> CGRect? {
-            guard let dict = window[kCGWindowBounds as String] as? NSDictionary else { return nil }
-            return CGRect(dictionaryRepresentation: dict as CFDictionary)
-        }
-        func number(_ window: [String: Any]) -> Int? {
-            window[kCGWindowNumber as String] as? Int
-        }
-
-        let ownWindows = windows.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid }
-        let mainWindow = ownWindows
-            .filter { ($0[kCGWindowLayer as String] as? Int) == 0 }
-            .max { (bounds($0).map { $0.width * $0.height } ?? 0) < (bounds($1).map { $0.width * $0.height } ?? 0) }
-        // The list is ordered front to back, so the first hit is what the
-        // pointer is actually over.
-        let hit = ownWindows.first { bounds($0)?.contains(point) ?? false }
-
-        guard let mainWindow, let hit else { return false }
-        return number(hit) == number(mainWindow)
-    }
-
     private static func isKeyPhysicallyHeld(_ keyCode: Int64) -> Bool {
         CGEventSource.keyState(.hidSystemState, key: CGKeyCode(truncatingIfNeeded: keyCode))
     }
@@ -511,11 +502,19 @@ final class GestureEngine: ObservableObject {
         if gestureActive, released(settings.gestureTriggerKeyCode) {
             endGestureMode(reason: "trigger no longer held, keyUp missed")
         }
+        if let session = threeDSession, released(session.keyCode) {
+            endThreeDMode(reason: "trigger no longer held, keyUp missed")
+        }
     }
 
     private func handleMouseMoved(event: CGEvent) -> Unmanaged<CGEvent>? {
-        if scrollActive || zoomActive || gestureActive {
+        if scrollActive || zoomActive || gestureActive || threeDSession != nil {
             endModesWhoseTriggerWasReleased()
+        }
+        if threeDSession != nil {
+            let delta = effectiveDelta(from: event)
+            moveThreeD(dx: delta.dx, dy: delta.dy)
+            return nil
         }
         if scrollActive {
             if momentumActive {
@@ -674,7 +673,7 @@ final class GestureEngine: ObservableObject {
 
         // Natural direction: moving the pointer down scrolls down (content
         // follows the movement), matching macOS's "natural scrolling" feel.
-        let sign: Double = (settings.naturalScrollDirection != scrollDirectionReversed) ? 1 : -1
+        let sign: Double = settings.naturalScrollDirection ? 1 : -1
         let sensitivity = settings.scrollSensitivity
 
         let rawScrollY = deltaY * sensitivity * sign
@@ -850,6 +849,197 @@ final class GestureEngine: ObservableObject {
 
         scrollEvent.flags = settings.zoomMethod == .cmdScroll ? .maskCommand : .maskControl
         scrollEvent.post(tap: .cghidEventTap)
+    }
+
+    // MARK: 3D Mode
+
+    private func beginThreeDMode(_ action: ThreeDAction, keyCode: Int64) {
+        if threeDSession != nil {
+            endThreeDMode(reason: "switched to \(action.rawValue)")
+        }
+        if momentumActive {
+            stopMomentum(reason: "3D Mode started")
+        }
+        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let binding = settings.threeDProfile(forBundleID: bundleID)[action]
+        disassociateCursor()
+        let origin = currentCursorPosition()
+        threeDSession = ThreeDSession(action: action, keyCode: keyCode, binding: binding, origin: origin, position: origin)
+        recordTriggerVerifiability(keyCode)
+
+        if Self.holdsShift(binding.output) {
+            postShiftKey(down: true)
+        }
+        if let button = Self.dragButton(for: binding.output) {
+            postDragEvent(.down, button: button, at: origin, shift: Self.holdsShift(binding.output))
+        } else if binding.output == .pinch {
+            postZoomEvent(phase: .began, magnification: 0)
+        }
+        Self.logger.notice(
+            "3D Mode STARTED (action=\(action.rawValue, privacy: .public), output=\(binding.output.rawValue, privacy: .public), reversed=\(binding.reversed, privacy: .public), frontmost=\(bundleID ?? "nil", privacy: .public))."
+        )
+    }
+
+    private func endThreeDMode(reason: String) {
+        guard let session = threeDSession else { return }
+        threeDSession = nil
+        verifiableTriggerKeyCodes.remove(session.keyCode)
+        let output = session.binding.output
+
+        if let button = Self.dragButton(for: output) {
+            postDragEvent(.up, button: button, at: session.position, shift: Self.holdsShift(output))
+        } else if output == .pinch {
+            postZoomEvent(phase: .ended, magnification: 0)
+        } else if output == .scroll || output == .shiftScroll, !session.isFirstScrollEvent {
+            postThreeDScroll(x: 0, y: 0, phase: .ended, shift: output == .shiftScroll)
+        }
+        if Self.holdsShift(output) {
+            postShiftKey(down: false)
+        }
+        reassociateCursor()
+        CGWarpMouseCursorPosition(session.origin)
+        Self.logger.notice("3D Mode ENDED (\(reason, privacy: .public)).")
+    }
+
+    private func moveThreeD(dx rawDX: Double, dy rawDY: Double) {
+        guard var session = threeDSession else { return }
+        let output = session.binding.output
+        let scale = settings.threeDSensitivity * (session.binding.reversed ? -1 : 1)
+        // Zoom is one-dimensional: only vertical movement counts.
+        let dx = session.action == .zoom ? 0 : rawDX * scale
+        let dy = rawDY * scale
+
+        if let button = Self.dragButton(for: output) {
+            moveDrag(&session, button: button, dx: dx, dy: dy)
+        } else {
+            switch output {
+            case .scroll, .shiftScroll:
+                // Content follows the pointer, as with natural scrolling.
+                let x = Int32(dx.rounded())
+                let y = Int32(dy.rounded())
+                if x != 0 || y != 0 {
+                    postThreeDScroll(
+                        x: x, y: y,
+                        phase: session.isFirstScrollEvent ? .began : .changed,
+                        shift: output == .shiftScroll
+                    )
+                    session.isFirstScrollEvent = false
+                }
+            case .pinch:
+                // Moving up magnifies, as in Zoom Mode.
+                if dy != 0 {
+                    postZoomEvent(phase: .changed, magnification: -dy * 0.01)
+                }
+            case .wheel:
+                // Moving up sends wheel-up notches.
+                session.wheelRemainder += -dy / Self.threeDWheelStep
+                let notches = Int32(session.wheelRemainder.rounded(.towardZero))
+                if notches != 0 {
+                    session.wheelRemainder -= Double(notches)
+                    CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: notches, wheel2: 0, wheel3: 0)?
+                        .post(tap: .cgSessionEventTap)
+                }
+            default:
+                break
+            }
+            pinCursorIfNeeded(source: "mouseMoved")
+        }
+        threeDSession = session
+    }
+
+    /// Moves the synthesized drag, and the pointer with it, since 3D views
+    /// read the pointer location rather than event deltas. When the drag
+    /// would leave the screen, it lets go and grabs again from the origin so
+    /// the view can keep turning in the same direction.
+    private func moveDrag(_ session: inout ThreeDSession, button: CGMouseButton, dx: Double, dy: Double) {
+        guard dx != 0 || dy != 0 else { return }
+        let shift = Self.holdsShift(session.binding.output)
+        var next = CGPoint(x: session.position.x + dx, y: session.position.y + dy)
+        if !Self.isOnScreen(next) {
+            postDragEvent(.up, button: button, at: session.position, shift: shift)
+            CGWarpMouseCursorPosition(session.origin)
+            postDragEvent(.down, button: button, at: session.origin, shift: shift)
+            next = CGPoint(x: session.origin.x + dx, y: session.origin.y + dy)
+        }
+        session.position = next
+        postDragEvent(.dragged, button: button, at: next, shift: shift, delta: (dx, dy))
+        CGWarpMouseCursorPosition(next)
+        lockedCursorPosition = next
+        lastDeltaTrackingPosition = next
+    }
+
+    private enum DragStage { case down, dragged, up }
+
+    private func postDragEvent(
+        _ stage: DragStage,
+        button: CGMouseButton,
+        at point: CGPoint,
+        shift: Bool,
+        delta: (dx: Double, dy: Double) = (0, 0)
+    ) {
+        let type: CGEventType
+        switch (button, stage) {
+        case (.left, .down): type = .leftMouseDown
+        case (.left, .dragged): type = .leftMouseDragged
+        case (.left, .up): type = .leftMouseUp
+        case (.right, .down): type = .rightMouseDown
+        case (.right, .dragged): type = .rightMouseDragged
+        case (.right, .up): type = .rightMouseUp
+        case (_, .down): type = .otherMouseDown
+        case (_, .dragged): type = .otherMouseDragged
+        case (_, .up): type = .otherMouseUp
+        }
+        guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button)
+        else { return }
+        event.flags = Self.currentFlags(addingShift: shift)
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        event.setIntegerValueField(.mouseEventDeltaX, value: Int64(delta.dx.rounded()))
+        event.setIntegerValueField(.mouseEventDeltaY, value: Int64(delta.dy.rounded()))
+        // Session level, past HID-level taps of mouse utilities that would
+        // otherwise claim synthesized middle-button drags for themselves.
+        event.post(tap: .cgSessionEventTap)
+    }
+
+    private func postThreeDScroll(x: Int32, y: Int32, phase: ScrollPhase, shift: Bool) {
+        guard let event = Self.pixelScrollEvent(x: x, y: y) else { return }
+        event.flags = Self.currentFlags(addingShift: shift)
+        event.setScrollPhases(scrollPhase: phase, momentumPhase: nil)
+        event.post(tap: .cghidEventTap)
+    }
+
+    /// Presses or releases Shift for real, so apps that read the keyboard
+    /// state rather than event flags see it held for the whole drag.
+    private func postShiftKey(down: Bool) {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_Shift), keyDown: down)
+        else { return }
+        event.type = .flagsChanged
+        event.flags = down ? .maskShift : []
+        event.post(tap: .cghidEventTap)
+    }
+
+    private static func currentFlags(addingShift shift: Bool) -> CGEventFlags {
+        var flags = CGEventSource.flagsState(.combinedSessionState)
+        if shift { flags.insert(.maskShift) }
+        return flags
+    }
+
+    private static func dragButton(for output: ThreeDOutput) -> CGMouseButton? {
+        switch output {
+        case .leftDrag: return .left
+        case .rightDrag: return .right
+        case .middleDrag, .shiftMiddleDrag: return .center
+        case .scroll, .shiftScroll, .pinch, .wheel: return nil
+        }
+    }
+
+    private static func holdsShift(_ output: ThreeDOutput) -> Bool {
+        output == .shiftMiddleDrag || output == .shiftScroll
+    }
+
+    private static func isOnScreen(_ point: CGPoint) -> Bool {
+        var count: UInt32 = 0
+        CGGetDisplaysWithPoint(point, 0, nil, &count)
+        return count > 0
     }
 
     private func triggerGesture(dx: Double, dy: Double) {

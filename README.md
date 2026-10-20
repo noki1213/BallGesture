@@ -54,15 +54,13 @@ To build from the Xcode GUI instead, open `BallGesture.xcodeproj` and build the 
 
 ## Usage
 
-Each mode is bound to a trigger key. Hold the key, move the ball, release. All three keys can be reassigned from the menu bar.
+Each mode is bound to a trigger key. Hold the key, move the ball, release. All six keys can be reassigned from the menu bar. A trackpad works the same way: hold the key and slide one finger.
 
 ### Scroll Mode — hold F15
 
 Moving the ball scrolls instead of moving the pointer. The pointer stays where it was.
 
 Flick the ball — move it fast and then let go — and momentum scrolling takes over, the same feel as a trackpad flick. Momentum keeps running after you release F15. Moving the ball again during momentum returns you to normal scrolling; pressing F15 again or clicking stops it.
-
-Apps listed under **Reverse direction in these apps** scroll the other way. This helps in 3D viewers such as CAD tools and slicers, where the scroll wheel zooms and the global direction can feel backwards. The app that is frontmost when you press F15 decides the direction. Only the app's main window is reversed; its dialogs and floating panels, such as a settings window, keep the usual direction.
 
 ### Zoom Mode — hold F16
 
@@ -89,6 +87,30 @@ Left and right send the standard back/forward shortcut, so what they do depends 
 
 **The Down gesture needs one-time setup.** It sends `Cmd + Option + Ctrl + D` rather than F11, because F11 is frequently intercepted by macOS or by remapping tools. Assign that combination yourself under System Settings → Keyboard → Keyboard Shortcuts → Mission Control → Show Desktop. Without that assignment, the Down gesture does nothing.
 
+### 3D Mode — hold F18 / F19 / F20
+
+Three keys move the view in 3D apps such as CAD tools, slicers, and WebGL viewers in a browser:
+
+| Key | Action | Default output |
+| --- | --- | --- |
+| F18 | Pan | Right drag |
+| F19 | Zoom | Wheel |
+| F20 | Rotate | Left drag |
+
+The defaults follow the common 3D mouse layout used by Bambu Studio, PrusaSlicer, OpenSCAD, and three.js `OrbitControls`. While a key is held, BallGesture presses the chosen button at the pointer and drags it with the ball; on release the button is let go and the pointer returns to where it started. A drag that reaches the edge of the screen is picked up again from the starting point, so the view keeps turning.
+
+Each action can send any of these: Left Drag, Right Drag, Middle Drag, Shift + Middle Drag, Scroll, Shift + Scroll, Pinch, or Wheel. Zoom uses vertical movement only; moving up zooms in. Each action also has its own **Reverse** switch, independent of the scroll direction setting.
+
+Apps that navigate differently get their own settings: choose **Add App…** in the 3D Mode section, then pick the app under **Settings for**. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
+
+| Action | Output |
+| --- | --- |
+| Pan | Scroll |
+| Zoom | Pinch |
+| Rotate | Shift + Scroll |
+
+With Fusion's mouse navigation instead, use Middle Drag for Pan and Shift + Middle Drag for Rotate.
+
 ## Settings
 
 Click the menu bar icon to open the settings popover.
@@ -96,15 +118,16 @@ Click the menu bar icon to open the settings popover.
 | Setting | Default | Range |
 | --- | --- | --- |
 | Enabled | On | — |
-| Trigger keys | F15 / F16 / F17 | Any key; a key already in use cannot be reused |
+| Trigger keys | F15 / F16 / F17, 3D: F18 / F19 / F20 | Any key; a key already in use cannot be reused |
 | Scroll sensitivity | 1.0 | 0.1 – 5.0 |
 | Natural scroll direction | On | — |
-| Reverse direction in these apps | None | Running apps, or apps chosen from /Applications |
 | Momentum scrolling | On | — |
 | Momentum strength | 0.5 | 0.0 – 1.0 |
 | Zoom sensitivity | 1.0 | 0.1 – 5.0 |
 | Zoom method | Pinch Gesture | Pinch / Ctrl+Scroll / Cmd+Scroll |
 | Gesture distance | 50 px | 10 – 200 px |
+| 3D output and Reverse | Pan: Right Drag, Zoom: Wheel, Rotate: Left Drag | Per action, for all apps or per app |
+| 3D sensitivity | 1.0 | 0.1 – 5.0 |
 
 The popover also shows live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
 
@@ -209,15 +232,13 @@ Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開�
 
 ## 使い方
 
-各モードにトリガーキーが割り当てられています。キーを押しながらボールを動かし、離す、という操作です。3つのキーはすべてメニューバーから変更できます。
+各モードにトリガーキーが割り当てられています。キーを押しながらボールを動かし、離す、という操作です。6つのキーはすべてメニューバーから変更できます。トラックパッドでも、キーを押しながら1本指でなぞれば同じように動きます。
 
 ### Scroll Mode — F15 を押しながら
 
 ボールを動かすとポインタではなく画面がスクロールします。ポインタはその場に固定されます。
 
 ボールを弾く（勢いよく動かしてすぐ放す）と慣性スクロールに移行します。トラックパッドでフリックしたときと同じ感触です。慣性は F15 を離した後も続きます。慣性中にボールを動かせば通常のスクロールに戻り、F15 をもう一度押すかクリックすれば止まります。
-
-**Reverse direction in these apps** に登録したアプリでは、スクロールの向きが逆になります。CAD やスライサーなど、スクロールで拡大縮小する 3D 画面で向きが逆に感じるときに使います。F15 を押した瞬間に最前面にあるアプリで向きが決まります。逆になるのはそのアプリのメインウィンドウだけで、設定画面などのダイアログや浮いているパネルはふつうの向きのままです。
 
 ### Zoom Mode — F16 を押しながら
 
@@ -244,6 +265,30 @@ Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開�
 
 **下方向だけは最初に設定が必要です。** F11 ではなく `Cmd + Option + Ctrl + D` を送っています。F11 は macOS 自体やキー変更ツールに横取りされることが多いためです。システム設定 → キーボード → キーボードショートカット → Mission Control → デスクトップを表示 に、この組み合わせを自分で割り当ててください。割り当てていない場合、下方向のジェスチャーは何も起こりません。
 
+### 3D Mode — F18 / F19 / F20 を押しながら
+
+CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面の視点を3つのキーで動かします。
+
+| キー | 操作 | 初期値 |
+| --- | --- | --- |
+| F18 | 平行移動（Pan） | 右ドラッグ |
+| F19 | ズーム（Zoom） | ホイール |
+| F20 | 回転（Rotate） | 左ドラッグ |
+
+初期値は Bambu Studio・PrusaSlicer・OpenSCAD・three.js の `OrbitControls` に共通するマウス操作に合わせています。キーを押している間、ポインタの位置でボタンを押し、ボールの動きに合わせてドラッグします。キーを離すとボタンを放し、ポインタは押し始めた位置に戻ります。ドラッグが画面の端に届いたときは押し始めた位置からつかみ直すので、同じ向きに回し続けられます。
+
+各操作で送るものは Left Drag・Right Drag・Middle Drag・Shift + Middle Drag・Scroll・Shift + Scroll・Pinch・Wheel から選べます。ズームは上下の動きだけを使い、上に動かすと拡大します。操作ごとに **Reverse**（向きを逆にする）があり、スクロールの向きの設定とは別に効きます。
+
+操作が違うアプリには専用の設定を作れます。3D Mode の **Add App…** でアプリを足し、**Settings for** でそのアプリを選んで設定します。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
+
+| 操作 | 送るもの |
+| --- | --- |
+| Pan | Scroll |
+| Zoom | Pinch |
+| Rotate | Shift + Scroll |
+
+Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate を Shift + Middle Drag にします。
+
 ## 設定項目
 
 メニューバーのアイコンをクリックすると設定画面が開きます。
@@ -251,15 +296,16 @@ Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開�
 | 設定 | 初期値 | 範囲 |
 | --- | --- | --- |
 | Enabled | オン | — |
-| トリガーキー | F15 / F16 / F17 | 任意のキー。他のモードで使用中のキーは選択不可 |
+| トリガーキー | F15 / F16 / F17、3D は F18 / F19 / F20 | 任意のキー。他のモードで使用中のキーは選択不可 |
 | スクロール感度 | 1.0 | 0.1 – 5.0 |
 | ナチュラルスクロール方向 | オン | — |
-| 向きを逆にするアプリ | なし | 起動中のアプリか /Applications から選択 |
 | 慣性スクロール | オン | — |
 | 慣性の強さ | 0.5 | 0.0 – 1.0 |
 | ズーム感度 | 1.0 | 0.1 – 5.0 |
 | ズーム方式 | Pinch Gesture | Pinch / Ctrl+Scroll / Cmd+Scroll |
 | ジェスチャー距離 | 50 px | 10 – 200 px |
+| 3D の送るもの・Reverse | Pan: Right Drag、Zoom: Wheel、Rotate: Left Drag | 操作ごと。全アプリ共通かアプリごと |
+| 3D の感度 | 1.0 | 0.1 – 5.0 |
 
 アクセシビリティの状態も表示されます。緑はイベントタップ稼働中、黄は権限待ちで自動リトライ中、赤は未許可です。
 
