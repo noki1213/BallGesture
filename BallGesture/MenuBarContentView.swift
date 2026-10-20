@@ -18,6 +18,8 @@ struct MenuBarContentView: View {
     @State private var isAddingThreeDApp = false
     /// Bundle ID of the app whose 3D settings are shown; empty for the default set.
     @State private var selectedThreeDApp = ""
+    @Namespace private var threeDAppNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -193,17 +195,37 @@ struct MenuBarContentView: View {
     private var threeDSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("3D Mode").font(.headline)
-            Picker("Settings for", selection: $selectedThreeDApp) {
-                Text("All Apps").tag("")
+            Text("Apps").font(.caption)
+            VStack(alignment: .leading, spacing: 2) {
+                threeDAppRow(
+                    bundleID: "",
+                    name: "All Other Apps",
+                    icon: NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: nil) ?? NSImage()
+                )
                 ForEach(settings.threeDAppProfiles) { app in
-                    Text(Self.appName(for: app.bundleID)).tag(app.bundleID)
+                    threeDAppRow(
+                        bundleID: app.bundleID,
+                        name: Self.appName(for: app.bundleID),
+                        icon: Self.appIcon(for: app.bundleID)
+                    )
                 }
             }
-            .pickerStyle(.menu)
+            Button(isAddingThreeDApp ? "Done" : "Add App…") {
+                isAddingThreeDApp.toggle()
+            }
+            if isAddingThreeDApp {
+                runningAppsToAdd
+            }
+            Text("Keys in \(selectedThreeDAppName)").font(.caption)
             ForEach(ThreeDAction.allCases) { action in
                 HStack(spacing: 6) {
-                    Text(action.displayName)
-                        .frame(width: 52, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(action.displayName)
+                        Text(KeyCodeNaming.displayName(for: settings.threeDTriggerKeyCode(for: action)))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(width: 52, alignment: .leading)
                     Picker("", selection: outputBinding(for: action)) {
                         ForEach(ThreeDOutput.allCases) { output in
                             Text(output.displayName).tag(output)
@@ -214,21 +236,55 @@ struct MenuBarContentView: View {
                     Toggle("Reverse", isOn: reversedBinding(for: action))
                 }
             }
-            HStack {
-                Button(isAddingThreeDApp ? "Done" : "Add App…") {
-                    isAddingThreeDApp.toggle()
-                }
-                if !selectedThreeDApp.isEmpty {
-                    Button("Remove App") {
-                        settings.threeDAppProfiles.removeAll { $0.bundleID == selectedThreeDApp }
+            sensitivitySlider(title: "Sensitivity (all apps)", value: $settings.threeDSensitivity)
+        }
+    }
+
+    private var selectedThreeDAppName: String {
+        selectedThreeDApp.isEmpty ? "All Other Apps" : Self.appName(for: selectedThreeDApp)
+    }
+
+    /// One app in the 3D app list; selecting it shows its keys below.
+    private func threeDAppRow(bundleID: String, name: String, icon: NSImage) -> some View {
+        let isSelected = selectedThreeDApp == bundleID
+        return HStack(spacing: 6) {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 16, height: 16)
+            Text(name)
+                .lineLimit(1)
+                .foregroundColor(isSelected ? Color(red: 0xfc / 255, green: 0xfc / 255, blue: 0xfa / 255) : .primary)
+            Spacer()
+            if !bundleID.isEmpty {
+                Button {
+                    settings.threeDAppProfiles.removeAll { $0.bundleID == bundleID }
+                    if isSelected {
                         selectedThreeDApp = ""
                     }
+                } label: {
+                    Image(systemName: "minus.circle")
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .help("Remove")
             }
-            if isAddingThreeDApp {
-                runningAppsToAdd
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 26)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color(red: 0x33 / 255, green: 0xA5 / 255, blue: 0xA5 / 255).opacity(0.3))
+                    .matchedGeometryEffect(id: "threeDAppSelection", in: threeDAppNamespace)
             }
-            sensitivitySlider(title: "Sensitivity", value: $settings.threeDSensitivity)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.1) : .spring(duration: 0.28, bounce: 0)) {
+                selectedThreeDApp = bundleID
+            }
         }
     }
 

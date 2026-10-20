@@ -101,7 +101,7 @@ The defaults follow the common 3D mouse layout used by Bambu Studio, PrusaSlicer
 
 Each action can send any of these: Left Drag, Right Drag, Middle Drag, Shift + Middle Drag, Scroll, Shift + Scroll, Pinch, or Wheel. Zoom uses vertical movement only; moving up zooms in. Each action also has its own **Reverse** switch, independent of the scroll direction setting.
 
-Apps that navigate differently get their own settings: choose **Add App…** in the 3D Mode section, then pick the app under **Settings for**. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
+Apps that navigate differently get their own settings. The 3D Mode section lists them under **Apps**, with **All Other Apps** first; click one to show and edit its keys below the list, and use **Add App…** to add another. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
 
 | Action | Output |
 | --- | --- |
@@ -279,7 +279,7 @@ CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面�
 
 各操作で送るものは Left Drag・Right Drag・Middle Drag・Shift + Middle Drag・Scroll・Shift + Scroll・Pinch・Wheel から選べます。ズームは上下の動きだけを使い、上に動かすと拡大します。操作ごとに **Reverse**（向きを逆にする）があり、スクロールの向きの設定とは別に効きます。
 
-操作が違うアプリには専用の設定を作れます。3D Mode の **Add App…** でアプリを足し、**Settings for** でそのアプリを選んで設定します。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
+操作が違うアプリには専用の設定を作れます。3D Mode の **Apps** に、先頭の **All Other Apps**（ほかのすべてのアプリ）と、専用の設定があるアプリが並びます。アプリを押すと、その下にそのアプリのキーの設定が出ます。アプリを足すときは **Add App…** を使います。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
 
 | 操作 | 送るもの |
 | --- | --- |
