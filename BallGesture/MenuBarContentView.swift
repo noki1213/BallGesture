@@ -15,6 +15,7 @@ struct MenuBarContentView: View {
     @ObservedObject private var engine = GestureEngine.shared
     @State private var isAccessibilityTrusted = AccessibilityPermission.isTrusted
     @State private var resetCommandCopied = false
+    @State private var isAddingReversedApp = false
 
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -200,10 +201,62 @@ struct MenuBarContentView: View {
                     .help("Remove")
                 }
             }
-            Button("Add App…") {
+            Button(isAddingReversedApp ? "Done" : "Add App…") {
+                isAddingReversedApp.toggle()
+            }
+            if isAddingReversedApp {
+                runningAppsToAdd
+            }
+        }
+    }
+
+    /// Running apps are offered first because some apps (Autodesk Fusion,
+    /// for one) start from a launcher in /Applications whose bundle ID
+    /// differs from the process that ends up frontmost.
+    private var runningAppsToAdd: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Running apps").font(.caption2).foregroundColor(.secondary)
+            ForEach(addableRunningApps, id: \.bundleIdentifier) { app in
+                HStack(spacing: 6) {
+                    Image(nsImage: app.icon ?? NSImage())
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                    Text(app.localizedName ?? app.bundleIdentifier ?? "")
+                        .lineLimit(1)
+                    Spacer()
+                    Button {
+                        if let bundleID = app.bundleIdentifier {
+                            settings.reversedScrollBundleIDs.append(bundleID)
+                        }
+                    } label: {
+                        Image(systemName: "plus.circle")
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .help("Add")
+                }
+            }
+            Button("Other…") {
                 addReversedApps()
             }
         }
+        .padding(.leading, 8)
+    }
+
+    private var addableRunningApps: [NSRunningApplication] {
+        var seen = Set(settings.reversedScrollBundleIDs)
+        seen.insert(Bundle.main.bundleIdentifier ?? "")
+        return NSWorkspace.shared.runningApplications
+            .filter { app in
+                guard app.activationPolicy == .regular,
+                      let bundleID = app.bundleIdentifier else { return false }
+                return seen.insert(bundleID).inserted
+            }
+            .sorted {
+                ($0.localizedName ?? "").localizedStandardCompare($1.localizedName ?? "") == .orderedAscending
+            }
     }
 
     private func addReversedApps() {
