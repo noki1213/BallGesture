@@ -92,8 +92,11 @@ final class GestureEngine: ObservableObject {
         let binding: ThreeDBinding
         /// Where the pointer was at keyDown; it returns here at keyUp.
         let origin: CGPoint
-        /// Where the synthesized drag currently is.
+        /// Where the synthesized drag currently is. For drag outputs the
+        /// pointer itself moves (at its usual speed and acceleration) and
+        /// this follows it; for the others the pointer stays pinned.
         var position: CGPoint
+        var isDrag: Bool { GestureEngine.dragButton(for: binding.output) != nil }
         var isFirstScrollEvent = true
         /// Fractional wheel notches not yet posted.
         var wheelRemainder = 0.0
@@ -511,7 +514,10 @@ final class GestureEngine: ObservableObject {
         if scrollActive || zoomActive || gestureActive || threeDSession != nil {
             endModesWhoseTriggerWasReleased()
         }
-        if threeDSession != nil {
+        if let session = threeDSession {
+            if session.isDrag {
+                return dragThreeD(event: event)
+            }
             let delta = effectiveDelta(from: event)
             moveThreeD(dx: delta.dx, dy: delta.dy)
             return nil
@@ -862,7 +868,12 @@ final class GestureEngine: ObservableObject {
         }
         let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let binding = settings.threeDProfile(forBundleID: bundleID)[action]
-        disassociateCursor()
+        let button = Self.dragButton(for: binding.output)
+        // A drag keeps the pointer live so it moves as it normally does;
+        // the other outputs pin it like Scroll Mode.
+        if button == nil {
+            disassociateCursor()
+        }
         let origin = currentCursorPosition()
         threeDSession = ThreeDSession(action: action, keyCode: keyCode, binding: binding, origin: origin, position: origin)
         recordTriggerVerifiability(keyCode)
@@ -870,7 +881,7 @@ final class GestureEngine: ObservableObject {
         if Self.holdsShift(binding.output) {
             postShiftKey(down: true)
         }
-        if let button = Self.dragButton(for: binding.output) {
+        if let button {
             postDragEvent(.down, button: button, at: origin, shift: Self.holdsShift(binding.output))
         } else if binding.output == .pinch {
             postZoomEvent(phase: .began, magnification: 0)
@@ -896,7 +907,9 @@ final class GestureEngine: ObservableObject {
         if Self.holdsShift(output) {
             postShiftKey(down: false)
         }
-        reassociateCursor()
+        if !session.isDrag {
+            reassociateCursor()
+        }
         CGWarpMouseCursorPosition(session.origin)
         Self.logger.notice("3D Mode ENDED (\(reason, privacy: .public)).")
     }
@@ -909,94 +922,106 @@ final class GestureEngine: ObservableObject {
         let dx = session.action == .zoom ? 0 : rawDX * scale
         let dy = rawDY * scale
 
-        if let button = Self.dragButton(for: output) {
-            moveDrag(&session, button: button, dx: dx, dy: dy)
-        } else {
-            switch output {
-            case .scroll, .shiftScroll:
-                // Content follows the pointer, as with natural scrolling.
-                let x = Int32(dx.rounded())
-                let y = Int32(dy.rounded())
-                if x != 0 || y != 0 {
-                    postThreeDScroll(
-                        x: x, y: y,
-                        phase: session.isFirstScrollEvent ? .began : .changed,
-                        shift: output == .shiftScroll
-                    )
-                    session.isFirstScrollEvent = false
-                }
-            case .pinch:
-                // Moving up magnifies, as in Zoom Mode.
-                if dy != 0 {
-                    postZoomEvent(phase: .changed, magnification: -dy * 0.01)
-                }
-            case .wheel:
-                // Moving up sends wheel-up notches.
-                session.wheelRemainder += -dy / Self.threeDWheelStep
-                let notches = Int32(session.wheelRemainder.rounded(.towardZero))
-                if notches != 0 {
-                    session.wheelRemainder -= Double(notches)
-                    CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: notches, wheel2: 0, wheel3: 0)?
-                        .post(tap: .cgSessionEventTap)
-                }
-            default:
-                break
+        switch output {
+        case .scroll, .shiftScroll:
+            // Content follows the pointer, as with natural scrolling.
+            let x = Int32(dx.rounded())
+            let y = Int32(dy.rounded())
+            if x != 0 || y != 0 {
+                postThreeDScroll(
+                    x: x, y: y,
+                    phase: session.isFirstScrollEvent ? .began : .changed,
+                    shift: output == .shiftScroll
+                )
+                session.isFirstScrollEvent = false
             }
-            pinCursorIfNeeded(source: "mouseMoved")
+        case .pinch:
+            // Moving up magnifies, as in Zoom Mode.
+            if dy != 0 {
+                postZoomEvent(phase: .changed, magnification: -dy * 0.01)
+            }
+        case .wheel:
+            // Moving up sends wheel-up notches.
+            session.wheelRemainder += -dy / Self.threeDWheelStep
+            let notches = Int32(session.wheelRemainder.rounded(.towardZero))
+            if notches != 0 {
+                session.wheelRemainder -= Double(notches)
+                CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: notches, wheel2: 0, wheel3: 0)?
+                    .post(tap: .cgSessionEventTap)
+            }
+        default:
+            break
         }
+        pinCursorIfNeeded(source: "mouseMoved")
         threeDSession = session
     }
 
-    /// Moves the synthesized drag, and the pointer with it, since 3D views
-    /// read the pointer location rather than event deltas. When the drag
-    /// would leave the screen, it lets go and grabs again from the origin so
-    /// the view can keep turning in the same direction.
-    private func moveDrag(_ session: inout ThreeDSession, button: CGMouseButton, dx: Double, dy: Double) {
-        guard dx != 0 || dy != 0 else { return }
+    /// Turns a pointer move into a drag of the session's button. The event
+    /// already carries the pointer's new position, so the drag moves at the
+    /// usual pointer speed; sensitivity and Reverse are applied by warping
+    /// the pointer to the adjusted spot. A drag that runs into the edge of
+    /// the screen lets go and grabs again from the origin, so the view can
+    /// keep moving in the same direction.
+    private func dragThreeD(event: CGEvent) -> Unmanaged<CGEvent>? {
+        guard var session = threeDSession, let button = Self.dragButton(for: session.binding.output) else {
+            return Unmanaged.passRetained(event)
+        }
         let shift = Self.holdsShift(session.binding.output)
-        var next = CGPoint(x: session.position.x + dx, y: session.position.y + dy)
-        if !Self.isOnScreen(next) {
+        let pointer = event.location
+        let moved = CGPoint(x: pointer.x - session.position.x, y: pointer.y - session.position.y)
+        let scale = settings.threeDSensitivity * (session.binding.reversed ? -1 : 1)
+        var delta = CGPoint(x: moved.x * scale, y: moved.y * scale)
+        if session.action == .zoom {
+            delta.x = 0
+        }
+        var next = CGPoint(x: session.position.x + delta.x, y: session.position.y + delta.y)
+
+        if Self.isAtEdge(pointer, movingBy: moved) || !Self.isOnScreen(next) {
             postDragEvent(.up, button: button, at: session.position, shift: shift)
-            CGWarpMouseCursorPosition(session.origin)
             postDragEvent(.down, button: button, at: session.origin, shift: shift)
-            next = CGPoint(x: session.origin.x + dx, y: session.origin.y + dy)
+            session.position = session.origin
+            next = CGPoint(x: session.origin.x + delta.x, y: session.origin.y + delta.y)
+        }
+        if abs(next.x - pointer.x) >= 0.5 || abs(next.y - pointer.y) >= 0.5 {
+            CGWarpMouseCursorPosition(next)
         }
         session.position = next
-        postDragEvent(.dragged, button: button, at: next, shift: shift, delta: (dx, dy))
-        CGWarpMouseCursorPosition(next)
-        lockedCursorPosition = next
-        lastDeltaTrackingPosition = next
+        threeDSession = session
+
+        let type: CGEventType
+        switch button {
+        case .left: type = .leftMouseDragged
+        case .right: type = .rightMouseDragged
+        default: type = .otherMouseDragged
+        }
+        event.type = type
+        event.location = next
+        event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(button.rawValue))
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        event.setIntegerValueField(.mouseEventDeltaX, value: Int64(delta.x.rounded()))
+        event.setIntegerValueField(.mouseEventDeltaY, value: Int64(delta.y.rounded()))
+        event.flags = Self.currentFlags(addingShift: shift)
+        return Unmanaged.passRetained(event)
     }
 
-    private enum DragStage { case down, dragged, up }
+    private enum DragStage { case down, up }
 
-    private func postDragEvent(
-        _ stage: DragStage,
-        button: CGMouseButton,
-        at point: CGPoint,
-        shift: Bool,
-        delta: (dx: Double, dy: Double) = (0, 0)
-    ) {
+    private func postDragEvent(_ stage: DragStage, button: CGMouseButton, at point: CGPoint, shift: Bool) {
         let type: CGEventType
         switch (button, stage) {
         case (.left, .down): type = .leftMouseDown
-        case (.left, .dragged): type = .leftMouseDragged
         case (.left, .up): type = .leftMouseUp
         case (.right, .down): type = .rightMouseDown
-        case (.right, .dragged): type = .rightMouseDragged
         case (.right, .up): type = .rightMouseUp
         case (_, .down): type = .otherMouseDown
-        case (_, .dragged): type = .otherMouseDragged
         case (_, .up): type = .otherMouseUp
         }
         guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button)
         else { return }
         event.flags = Self.currentFlags(addingShift: shift)
         event.setIntegerValueField(.mouseEventClickState, value: 1)
-        event.setIntegerValueField(.mouseEventDeltaX, value: Int64(delta.dx.rounded()))
-        event.setIntegerValueField(.mouseEventDeltaY, value: Int64(delta.dy.rounded()))
         // Session level, past HID-level taps of mouse utilities that would
-        // otherwise claim synthesized middle-button drags for themselves.
+        // otherwise claim synthesized middle-button presses for themselves.
         event.post(tap: .cgSessionEventTap)
     }
 
@@ -1034,6 +1059,15 @@ final class GestureEngine: ObservableObject {
 
     private static func holdsShift(_ output: ThreeDOutput) -> Bool {
         output == .shiftMiddleDrag || output == .shiftScroll
+    }
+
+    /// Whether `point` sits on a screen edge the pointer is pushing against.
+    /// Crossing into an adjacent display is not an edge.
+    private static func isAtEdge(_ point: CGPoint, movingBy delta: CGPoint) -> Bool {
+        (delta.x < 0 && !isOnScreen(CGPoint(x: point.x - 1, y: point.y))) ||
+        (delta.x > 0 && !isOnScreen(CGPoint(x: point.x + 1, y: point.y))) ||
+        (delta.y < 0 && !isOnScreen(CGPoint(x: point.x, y: point.y - 1))) ||
+        (delta.y > 0 && !isOnScreen(CGPoint(x: point.x, y: point.y + 1)))
     }
 
     private static func isOnScreen(_ point: CGPoint) -> Bool {
