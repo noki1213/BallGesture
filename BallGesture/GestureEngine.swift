@@ -1171,9 +1171,6 @@ final class GestureEngine: ObservableObject {
     /// modifier, not the key, while a layer key is held, so a hold key
     /// lets that hold press the button.
     private func handleFlagsChanged(event: CGEvent) -> Unmanaged<CGEvent>? {
-        if event.getIntegerValueField(.eventSourceUserData) == Self.releasedModifierMarker {
-            return Unmanaged.passRetained(event)
-        }
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         guard let modifier = Self.modifierFlags(forKeyCode: keyCode) else {
             return Unmanaged.passRetained(event)
@@ -1202,26 +1199,9 @@ final class GestureEngine: ObservableObject {
         if isDown, autoMouseActive, settings.isEnabled, layerPresses[keyCode] == nil,
            let button = settings.autoMouseButton(forHoldKeyCode: keyCode) {
             pressLayerButton(Self.mouseButton(for: button), keyCode: keyCode, modifierFlags: modifier.all)
-            releaseHeldModifier(keyCode: keyCode, flags: modifier.all)
             return nil
         }
         return Unmanaged.passRetained(event)
-    }
-
-    /// Tags the modifier releases posted by `releaseHeldModifier` so the tap lets them through.
-    private static let releasedModifierMarker: Int64 = 0x42474D52
-
-    /// The swallowed modifier press still counts as held in the system's
-    /// keyboard state, which makes the window server treat a title bar press
-    /// as a Control-click or Command-click instead of a window drag. Posting
-    /// the release clears that state while the physical key stays down.
-    private func releaseHeldModifier(keyCode: Int64, flags: CGEventFlags) {
-        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: false)
-        else { return }
-        event.type = .flagsChanged
-        event.flags = CGEventSource.flagsState(.combinedSessionState).subtracting(flags)
-        event.setIntegerValueField(.eventSourceUserData, value: Self.releasedModifierMarker)
-        event.post(tap: .cghidEventTap)
     }
 
     /// The generic flag and the device-specific bit (left or right side) of a modifier key.
