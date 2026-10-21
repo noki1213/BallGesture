@@ -18,6 +18,7 @@ struct MenuBarContentView: View {
     @State private var isAddingThreeDApp = false
     /// Bundle ID of the app whose 3D settings are shown; empty for the default set.
     @State private var selectedThreeDApp = ""
+    @State private var pointingDevices = PointingDeviceMonitor.connectedDevices()
     @Namespace private var threeDAppNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -53,6 +54,10 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            autoMouseSection
+
+            Divider()
+
             Button("Quit BallGesture") {
                 NSApp.terminate(nil)
             }
@@ -61,6 +66,7 @@ struct MenuBarContentView: View {
         .frame(width: 300)
         .onReceive(refreshTimer) { _ in
             isAccessibilityTrusted = AccessibilityPermission.isTrusted
+            pointingDevices = PointingDeviceMonitor.connectedDevices()
         }
     }
 
@@ -402,6 +408,57 @@ struct MenuBarContentView: View {
             return NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
         }
         return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    private var autoMouseSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $settings.autoMouseEnabled) {
+                Text("Auto Mouse Layer").font(.headline)
+            }
+            Text("While the pointer moves, these keys click instead of typing.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            if settings.autoMouseEnabled {
+                Picker("Device", selection: $settings.autoMouseDevice) {
+                    Text("Any Pointer").tag(PointingDeviceID?.none)
+                    ForEach(autoMouseDeviceChoices) { device in
+                        Text(pointingDevices.contains(device) ? device.product : "\(device.product) (not connected)")
+                            .tag(PointingDeviceID?.some(device))
+                    }
+                }
+                .pickerStyle(.menu)
+                if engine.pointingMonitorNeedsAccess {
+                    Text("Watching one device needs Input Monitoring access.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Button("Open Input Monitoring Settings") {
+                        PointingDeviceMonitor.openInputMonitoringSettings()
+                    }
+                }
+                ForEach(AutoMouseButton.allCases) { button in
+                    keyRow(
+                        title: button.displayName,
+                        keyCode: settings.autoMouseKeyCode(for: button),
+                        target: .autoMouseButton(button)
+                    )
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Stays On After Moving").font(.caption)
+                    Slider(value: $settings.autoMouseTimeout, in: 0.2...2.0, step: 0.1)
+                    Text("\(Int((settings.autoMouseTimeout * 1000).rounded())) ms")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    /// Connected devices, plus the chosen one while it is disconnected.
+    private var autoMouseDeviceChoices: [PointingDeviceID] {
+        guard let chosen = settings.autoMouseDevice, !pointingDevices.contains(chosen) else {
+            return pointingDevices
+        }
+        return pointingDevices + [chosen]
     }
 
     private var zoomSection: some View {

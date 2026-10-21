@@ -5,7 +5,8 @@
 //  Owns the CGEventTap and turns mouse movement, while a trigger key is held,
 //  into scroll events (Scroll Mode), pinch/zoom events (Zoom Mode), system
 //  gestures (Gesture Mode), or the drags, scrolls and pinches a 3D view uses
-//  to pan, zoom and rotate (3D Mode).
+//  to pan, zoom and rotate (3D Mode). While the pointer moves, chosen keys
+//  also click like mouse buttons (the auto mouse layer).
 //
 
 import AppKit
@@ -165,11 +166,53 @@ final class GestureEngine: ObservableObject {
         return pow(0.5, momentumTickInterval / halfLifeSeconds)
     }
 
+    // MARK: Auto mouse layer
+    //
+    // Movement of the chosen pointing device (or of any pointer) turns the
+    // layer on; until the pointer has rested for `autoMouseTimeout`, the
+    // layer's keys press and release mouse buttons instead of typing. Any
+    // other key turns the layer off at once, so typing right after moving
+    // the pointer is not delayed.
+
+    private let pointingMonitor = PointingDeviceMonitor()
+    private var pointingMonitorRetryTimer: Timer?
+    private var autoMouseActive = false
+    private var autoMouseExitTimer: Timer?
+    /// Movement (device counts) since the pointer last rested, while the layer is off.
+    private var autoMouseEntryMovement = 0
+    private var lastAutoMouseMovementTime: CFAbsoluteTime = 0
+    /// Movement needed to turn the layer on, so a slight bump while typing does not.
+    private static let autoMouseEntryThreshold = 8
+    /// Movement older than this does not count toward the threshold.
+    private static let autoMouseEntryWindow = 0.3
+
+    private struct LayerPress {
+        let button: CGMouseButton
+        let clickCount: Int64
+    }
+    /// Layer keys currently held, by keycode. A held key stays a mouse
+    /// button until its keyUp, even if the layer times out meanwhile.
+    private var layerPresses: [Int64: LayerPress] = [:]
+    private var lastLayerClick: (button: CGMouseButton, time: CFAbsoluteTime, position: CGPoint, count: Int64)?
+
+    @Published private(set) var pointingMonitorNeedsAccess = false
+
     private let settings = AppSettings.shared
+    private var cancellables: Set<AnyCancellable> = []
 
     @Published private(set) var tapStatus: TapStatus = .notStarted
 
-    private init() {}
+    private init() {
+        pointingMonitor.onMove = { [weak self] dx, dy in
+            self?.noteAutoMouseMovement(dx: dx, dy: dy)
+        }
+        settings.$autoMouseEnabled
+            .combineLatest(settings.$autoMouseDevice)
+            .sink { [weak self] enabled, device in
+                self?.updatePointingMonitor(enabled: enabled, device: device)
+            }
+            .store(in: &cancellables)
+    }
 
     var isRunning: Bool { eventTap != nil }
 
@@ -271,6 +314,8 @@ final class GestureEngine: ObservableObject {
         if momentumActive {
             stopMomentum(reason: "app terminating")
         }
+        releaseLayerPresses()
+        exitAutoMouseLayer(reason: "app terminating")
         lockedCursorPosition = nil
         lastDeltaTrackingPosition = nil
     }
@@ -379,8 +424,26 @@ final class GestureEngine: ObservableObject {
             return Unmanaged.passRetained(event)
         }
 
+        if let press = layerPresses[keyCode] {
+            if type == .keyUp {
+                layerPresses[keyCode] = nil
+                postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount)
+                if autoMouseActive {
+                    scheduleAutoMouseExit()
+                }
+            }
+            return nil
+        }
+
         guard settings.isEnabled else {
             return Unmanaged.passRetained(event)
+        }
+
+        if autoMouseActive, type == .keyDown, let button = settings.autoMouseButton(forKeyCode: keyCode) {
+            if !isRepeat {
+                pressLayerButton(Self.mouseButton(for: button), keyCode: keyCode)
+            }
+            return nil
         }
 
         if keyCode == settings.scrollTriggerKeyCode {
@@ -438,6 +501,9 @@ final class GestureEngine: ObservableObject {
             return nil
         }
 
+        if type == .keyDown, autoMouseActive {
+            exitAutoMouseLayer(reason: "other key pressed")
+        }
         return Unmanaged.passRetained(event)
     }
 
@@ -511,6 +577,12 @@ final class GestureEngine: ObservableObject {
     }
 
     private func handleMouseMoved(event: CGEvent) -> Unmanaged<CGEvent>? {
+        if settings.autoMouseDevice == nil {
+            noteAutoMouseMovement(
+                dx: Int(event.getIntegerValueField(.mouseEventDeltaX)),
+                dy: Int(event.getIntegerValueField(.mouseEventDeltaY))
+            )
+        }
         if scrollActive || zoomActive || gestureActive || threeDSession != nil {
             endModesWhoseTriggerWasReleased()
         }
@@ -570,6 +642,9 @@ final class GestureEngine: ObservableObject {
                 pinCursorIfNeeded(source: "mouseMoved")
             }
             return nil
+        }
+        if !layerPresses.isEmpty {
+            return dragLayerButton(event: event)
         }
         return Unmanaged.passRetained(event)
     }
@@ -1006,7 +1081,13 @@ final class GestureEngine: ObservableObject {
 
     private enum DragStage { case down, up }
 
-    private func postDragEvent(_ stage: DragStage, button: CGMouseButton, at point: CGPoint, shift: Bool) {
+    private func postDragEvent(
+        _ stage: DragStage,
+        button: CGMouseButton,
+        at point: CGPoint,
+        shift: Bool = false,
+        clickCount: Int64 = 1
+    ) {
         let type: CGEventType
         switch (button, stage) {
         case (.left, .down): type = .leftMouseDown
@@ -1019,7 +1100,7 @@ final class GestureEngine: ObservableObject {
         guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button)
         else { return }
         event.flags = Self.currentFlags(addingShift: shift)
-        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        event.setIntegerValueField(.mouseEventClickState, value: clickCount)
         // Session level, past HID-level taps of mouse utilities that would
         // otherwise claim synthesized middle-button presses for themselves.
         event.post(tap: .cgSessionEventTap)
@@ -1074,6 +1155,136 @@ final class GestureEngine: ObservableObject {
         var count: UInt32 = 0
         CGGetDisplaysWithPoint(point, 0, nil, &count)
         return count > 0
+    }
+
+    // MARK: Auto mouse layer
+
+    private func updatePointingMonitor(enabled: Bool, device: PointingDeviceID?) {
+        pointingMonitorRetryTimer?.invalidate()
+        pointingMonitorRetryTimer = nil
+        pointingMonitor.stop()
+        pointingMonitorNeedsAccess = false
+        if !enabled {
+            releaseLayerPresses()
+            exitAutoMouseLayer(reason: "turned off")
+        }
+        guard enabled, let device else { return }
+
+        if !PointingDeviceMonitor.hasInputMonitoringAccess {
+            PointingDeviceMonitor.requestInputMonitoringAccess()
+        }
+        startPointingMonitor(device)
+    }
+
+    /// Retries every 2 seconds while the device cannot be opened, so the
+    /// layer starts working as soon as Input Monitoring is granted.
+    private func startPointingMonitor(_ device: PointingDeviceID) {
+        if pointingMonitor.start(device: device) {
+            pointingMonitorNeedsAccess = false
+            Self.logger.notice("Watching \(device.product, privacy: .public) for the auto mouse layer.")
+            return
+        }
+        pointingMonitorNeedsAccess = !PointingDeviceMonitor.hasInputMonitoringAccess
+        guard pointingMonitorRetryTimer == nil else { return }
+        pointingMonitorRetryTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.pointingMonitor.start(device: device) {
+                    timer.invalidate()
+                    self.pointingMonitorRetryTimer = nil
+                    self.pointingMonitorNeedsAccess = false
+                    Self.logger.notice("Watching \(device.product, privacy: .public) for the auto mouse layer.")
+                } else {
+                    self.pointingMonitorNeedsAccess = !PointingDeviceMonitor.hasInputMonitoringAccess
+                }
+            }
+        }
+    }
+
+    private func noteAutoMouseMovement(dx: Int, dy: Int) {
+        guard settings.isEnabled, settings.autoMouseEnabled, dx != 0 || dy != 0 else { return }
+        if !autoMouseActive {
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - lastAutoMouseMovementTime > Self.autoMouseEntryWindow {
+                autoMouseEntryMovement = 0
+            }
+            lastAutoMouseMovementTime = now
+            autoMouseEntryMovement += abs(dx) + abs(dy)
+            guard autoMouseEntryMovement >= Self.autoMouseEntryThreshold else { return }
+            autoMouseActive = true
+            Self.logger.notice("Auto mouse layer ON.")
+        }
+        scheduleAutoMouseExit()
+    }
+
+    private func scheduleAutoMouseExit() {
+        autoMouseExitTimer?.invalidate()
+        let timer = Timer(timeInterval: settings.autoMouseTimeout, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.autoMouseExitTimer = nil
+                // A held button keeps the layer on; its keyUp restarts the countdown.
+                if self.layerPresses.isEmpty {
+                    self.exitAutoMouseLayer(reason: "pointer rested")
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        autoMouseExitTimer = timer
+    }
+
+    private func exitAutoMouseLayer(reason: String) {
+        autoMouseExitTimer?.invalidate()
+        autoMouseExitTimer = nil
+        autoMouseEntryMovement = 0
+        guard autoMouseActive else { return }
+        autoMouseActive = false
+        Self.logger.notice("Auto mouse layer OFF (\(reason, privacy: .public)).")
+    }
+
+    /// Presses `button` at the pointer. A press soon after a click of the
+    /// same button at the same spot continues it as a double or triple click.
+    private func pressLayerButton(_ button: CGMouseButton, keyCode: Int64) {
+        let now = CFAbsoluteTimeGetCurrent()
+        let position = currentCursorPosition()
+        var count: Int64 = 1
+        if let last = lastLayerClick, last.button == button,
+           now - last.time <= NSEvent.doubleClickInterval,
+           abs(position.x - last.position.x) <= 4, abs(position.y - last.position.y) <= 4 {
+            count = last.count + 1
+        }
+        lastLayerClick = (button, now, position, count)
+        layerPresses[keyCode] = LayerPress(button: button, clickCount: count)
+        postDragEvent(.down, button: button, at: position, clickCount: count)
+    }
+
+    private func releaseLayerPresses() {
+        for press in layerPresses.values {
+            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount)
+        }
+        layerPresses.removeAll()
+    }
+
+    /// While a layer key is held, pointer movement is a drag of its button.
+    private func dragLayerButton(event: CGEvent) -> Unmanaged<CGEvent>? {
+        let presses = Array(layerPresses.values)
+        let press = presses.first { $0.button == .left } ?? presses.first { $0.button == .right } ?? presses[0]
+        switch press.button {
+        case .left: event.type = .leftMouseDragged
+        case .right: event.type = .rightMouseDragged
+        default: event.type = .otherMouseDragged
+        }
+        event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(press.button.rawValue))
+        event.setIntegerValueField(.mouseEventClickState, value: press.clickCount)
+        return Unmanaged.passRetained(event)
+    }
+
+    private static func mouseButton(for button: AutoMouseButton) -> CGMouseButton {
+        switch button {
+        case .left: return .left
+        case .right: return .right
+        case .middle: return .center
+        }
     }
 
     private func triggerGesture(dx: Double, dy: Double) {

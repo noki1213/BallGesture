@@ -115,12 +115,30 @@ struct ThreeDAppProfile: Codable, Equatable, Identifiable {
     var id: String { bundleID }
 }
 
+/// A mouse button that a key turns into while the auto mouse layer is on.
+enum AutoMouseButton: String, CaseIterable, Identifiable {
+    case left
+    case right
+    case middle
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .left: return "Left Click"
+        case .right: return "Right Click"
+        case .middle: return "Middle Click"
+        }
+    }
+}
+
 /// Which trigger key is currently being (re)captured from the "Set Key" UI.
 enum KeyCaptureTarget: Equatable {
     case scrollTrigger
     case zoomTrigger
     case gestureTrigger
     case threeDTrigger(ThreeDAction)
+    case autoMouseButton(AutoMouseButton)
 }
 
 @MainActor
@@ -145,6 +163,12 @@ final class AppSettings: ObservableObject {
         static func threeDTriggerKeyCode(_ action: ThreeDAction) -> String {
             "BallGesture.threeDTriggerKeyCode.\(action.rawValue)"
         }
+        static let autoMouseEnabled = "BallGesture.autoMouseEnabled"
+        static let autoMouseDevice = "BallGesture.autoMouseDevice"
+        static let autoMouseTimeout = "BallGesture.autoMouseTimeout"
+        static func autoMouseKeyCode(_ button: AutoMouseButton) -> String {
+            "BallGesture.autoMouseKeyCode.\(button.rawValue)"
+        }
     }
 
     static let defaultScrollTriggerKeyCode = Int64(kVK_F15) // 113
@@ -155,6 +179,13 @@ final class AppSettings: ObservableObject {
         case .pan: return Int64(kVK_F18)
         case .zoom: return Int64(kVK_F19)
         case .rotate: return Int64(kVK_F20)
+        }
+    }
+    static func defaultAutoMouseKeyCode(_ button: AutoMouseButton) -> Int64 {
+        switch button {
+        case .left: return Int64(kVK_ANSI_J)
+        case .right: return Int64(kVK_ANSI_K)
+        case .middle: return Int64(kVK_ANSI_L)
         }
     }
 
@@ -226,6 +257,34 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var autoMouseEnabled: Bool {
+        didSet { defaults.set(autoMouseEnabled, forKey: Keys.autoMouseEnabled) }
+    }
+
+    /// The device whose movement turns the layer on; nil for any pointer.
+    @Published var autoMouseDevice: PointingDeviceID? {
+        didSet {
+            if let autoMouseDevice {
+                Self.store(autoMouseDevice, in: defaults, forKey: Keys.autoMouseDevice)
+            } else {
+                defaults.removeObject(forKey: Keys.autoMouseDevice)
+            }
+        }
+    }
+
+    /// Seconds the layer stays on after the pointer stops.
+    @Published var autoMouseTimeout: Double {
+        didSet { defaults.set(autoMouseTimeout, forKey: Keys.autoMouseTimeout) }
+    }
+
+    @Published private(set) var autoMouseKeyCodes: [AutoMouseButton: Int64] {
+        didSet {
+            for (button, keyCode) in autoMouseKeyCodes {
+                defaults.set(keyCode, forKey: Keys.autoMouseKeyCode(button))
+            }
+        }
+    }
+
     /// Non-persisted UI state: which trigger key is currently being captured.
     @Published var captureTarget: KeyCaptureTarget?
     /// Non-persisted UI state: message shown when a capture attempt is rejected.
@@ -259,6 +318,24 @@ final class AppSettings: ObservableObject {
                 ?? Self.defaultThreeDTriggerKeyCode(action)
         }
         threeDTriggerKeyCodes = threeDKeys
+        autoMouseEnabled = defaults.object(forKey: Keys.autoMouseEnabled) as? Bool ?? false
+        autoMouseDevice = Self.load(PointingDeviceID.self, from: defaults, forKey: Keys.autoMouseDevice)
+        autoMouseTimeout = defaults.object(forKey: Keys.autoMouseTimeout) as? Double ?? 0.7
+        var autoMouseKeys: [AutoMouseButton: Int64] = [:]
+        for button in AutoMouseButton.allCases {
+            autoMouseKeys[button] = defaults.object(forKey: Keys.autoMouseKeyCode(button)) as? Int64
+                ?? Self.defaultAutoMouseKeyCode(button)
+        }
+        autoMouseKeyCodes = autoMouseKeys
+    }
+
+    func autoMouseKeyCode(for button: AutoMouseButton) -> Int64 {
+        autoMouseKeyCodes[button] ?? Self.defaultAutoMouseKeyCode(button)
+    }
+
+    /// The mouse button `keyCode` turns into while the auto mouse layer is on, if any.
+    func autoMouseButton(forKeyCode keyCode: Int64) -> AutoMouseButton? {
+        AutoMouseButton.allCases.first { autoMouseKeyCode(for: $0) == keyCode }
     }
 
     func threeDTriggerKeyCode(for action: ThreeDAction) -> Int64 {
@@ -314,6 +391,8 @@ final class AppSettings: ObservableObject {
             (.gestureTrigger, gestureTriggerKeyCode, "Gesture Mode")
         ] + ThreeDAction.allCases.map {
             (.threeDTrigger($0), threeDTriggerKeyCode(for: $0), "3D \($0.displayName)")
+        } + AutoMouseButton.allCases.map {
+            (.autoMouseButton($0), autoMouseKeyCode(for: $0), $0.displayName)
         }
         let otherKeys = assignedKeys.filter { $0.0 != target }
 
@@ -330,6 +409,7 @@ final class AppSettings: ObservableObject {
         case .zoomTrigger: zoomTriggerKeyCode = keyCode
         case .gestureTrigger: gestureTriggerKeyCode = keyCode
         case .threeDTrigger(let action): threeDTriggerKeyCodes[action] = keyCode
+        case .autoMouseButton(let button): autoMouseKeyCodes[button] = keyCode
         }
         captureErrorMessage = nil
         captureTarget = nil
