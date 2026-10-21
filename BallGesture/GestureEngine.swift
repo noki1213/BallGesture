@@ -51,6 +51,12 @@ final class GestureEngine: ObservableObject {
     /// Keycode whose keyUp must be swallowed after a key-capture keyDown,
     /// so the captured key doesn't leak a stray keyUp to other apps.
     private var pendingCaptureSwallowKeyCode: Int64?
+    /// Keys whose current press was swallowed. A keyUp is only swallowed
+    /// when its keyDown was: if the system saw the keyDown (the tap was
+    /// briefly disabled, or Secure Input hid it from the tap), it must also
+    /// see the keyUp, or it keeps the key held. F14 and F15 adjust display
+    /// brightness, so a stuck F15 pins brightness at maximum with its HUD up.
+    private var swallowedKeyDowns: Set<Int64> = []
 
     /// Cursor position captured the instant a mode starts. `CGAssociateMouseAndMouseCursorPosition(0)`
     /// is supposed to stop the OS from moving the cursor while it's disassociated, but on real
@@ -272,6 +278,17 @@ final class GestureEngine: ObservableObject {
         tapStatus = .running
         retryTimer?.invalidate()
         retryTimer = nil
+        releaseTriggerKeys()
+    }
+
+    /// Posts a keyUp for every trigger key, so a press the system saw before
+    /// the tap existed (or while it was off) does not stay held.
+    private func releaseTriggerKeys() {
+        let keyCodes = [settings.scrollTriggerKeyCode, settings.zoomTriggerKeyCode, settings.gestureTriggerKeyCode]
+            + ThreeDAction.allCases.map { settings.threeDTriggerKeyCode(for: $0) }
+        for keyCode in Set(keyCodes) {
+            CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: false)?.post(tap: .cghidEventTap)
+        }
     }
 
     private func scheduleRetry() {
@@ -406,6 +423,23 @@ final class GestureEngine: ObservableObject {
 
     private func handleKeyEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let result = routeKeyEvent(type: type, event: event)
+        if type == .keyDown {
+            if result == nil {
+                swallowedKeyDowns.insert(keyCode)
+            } else {
+                swallowedKeyDowns.remove(keyCode)
+            }
+            return result
+        }
+        if result == nil, swallowedKeyDowns.remove(keyCode) == nil {
+            return Unmanaged.passRetained(event)
+        }
+        return result
+    }
+
+    private func routeKeyEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
         // Diagnostic: shows whether a given physical key press (e.g. a
@@ -435,7 +469,7 @@ final class GestureEngine: ObservableObject {
         if let press = layerPresses[keyCode] {
             if type == .keyUp {
                 layerPresses[keyCode] = nil
-                postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount)
+                postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
                 if autoMouseActive {
                     scheduleAutoMouseExit()
                 }
@@ -1094,7 +1128,8 @@ final class GestureEngine: ObservableObject {
         button: CGMouseButton,
         at point: CGPoint,
         shift: Bool = false,
-        clickCount: Int64 = 1
+        clickCount: Int64 = 1,
+        tap: CGEventTapLocation = .cgSessionEventTap
     ) {
         let type: CGEventType
         switch (button, stage) {
@@ -1109,9 +1144,16 @@ final class GestureEngine: ObservableObject {
         else { return }
         event.flags = Self.currentFlags(addingShift: shift).subtracting(layerModifierFlags)
         event.setIntegerValueField(.mouseEventClickState, value: clickCount)
-        // Session level, past HID-level taps of mouse utilities that would
-        // otherwise claim synthesized middle-button presses for themselves.
-        event.post(tap: .cgSessionEventTap)
+        event.post(tap: tap)
+    }
+
+    /// Left and right layer presses go in at HID level so the system's button
+    /// state shows them held: the window server ends a title bar drag at once
+    /// when that state says the button is up. Middle presses stay at session
+    /// level, past HID-level taps of mouse utilities that would otherwise
+    /// claim synthesized middle-button presses for themselves.
+    private static func layerTap(for button: CGMouseButton) -> CGEventTapLocation {
+        button == .center ? .cgSessionEventTap : .cghidEventTap
     }
 
     private func postThreeDScroll(x: Int32, y: Int32, phase: ScrollPhase, shift: Bool) {
@@ -1190,7 +1232,7 @@ final class GestureEngine: ObservableObject {
 
         if !isDown, let press = layerPresses[keyCode] {
             layerPresses[keyCode] = nil
-            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount)
+            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
             if autoMouseActive {
                 scheduleAutoMouseExit()
             }
@@ -1318,12 +1360,12 @@ final class GestureEngine: ObservableObject {
         }
         lastLayerClick = (button, now, position, count)
         layerPresses[keyCode] = LayerPress(button: button, clickCount: count, modifierFlags: modifierFlags)
-        postDragEvent(.down, button: button, at: position, clickCount: count)
+        postDragEvent(.down, button: button, at: position, clickCount: count, tap: Self.layerTap(for: button))
     }
 
     private func releaseLayerPresses() {
         for press in layerPresses.values {
-            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount)
+            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
         }
         layerPresses.removeAll()
     }
