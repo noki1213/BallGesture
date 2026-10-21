@@ -189,7 +189,12 @@ final class GestureEngine: ObservableObject {
     private struct LayerPress {
         let button: CGMouseButton
         let clickCount: Int64
+        /// Set when a modifier key holds the button. The system still sees
+        /// the modifier as down, so its flags are kept off the mouse events.
+        var modifierFlags: CGEventFlags = []
     }
+    /// Modifier swallowed by key capture whose release must be swallowed too.
+    private var pendingCaptureSwallowModifier: Int64?
     /// Layer keys currently held, by keycode. A held key stays a mouse
     /// button until its keyUp, even if the layer times out meanwhile.
     private var layerPresses: [Int64: LayerPress] = [:]
@@ -233,6 +238,7 @@ final class GestureEngine: ObservableObject {
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
+            (1 << CGEventType.flagsChanged.rawValue) |
             (1 << CGEventType.mouseMoved.rawValue) |
             (1 << CGEventType.leftMouseDown.rawValue) |
             (1 << CGEventType.rightMouseDown.rawValue)
@@ -379,6 +385,8 @@ final class GestureEngine: ObservableObject {
         switch type {
         case .keyDown, .keyUp:
             return handleKeyEvent(type: type, event: event)
+        case .flagsChanged:
+            return handleFlagsChanged(event: event)
         case .mouseMoved:
             return handleMouseMoved(event: event)
         case .leftMouseDown, .rightMouseDown:
@@ -1099,7 +1107,7 @@ final class GestureEngine: ObservableObject {
         }
         guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button)
         else { return }
-        event.flags = Self.currentFlags(addingShift: shift)
+        event.flags = Self.currentFlags(addingShift: shift).subtracting(layerModifierFlags)
         event.setIntegerValueField(.mouseEventClickState, value: clickCount)
         // Session level, past HID-level taps of mouse utilities that would
         // otherwise claim synthesized middle-button presses for themselves.
@@ -1158,6 +1166,61 @@ final class GestureEngine: ObservableObject {
     }
 
     // MARK: Auto mouse layer
+
+    /// Modifier presses and releases. Keyboards with home row mods send a
+    /// modifier, not the key, while a layer key is held, so a hold key
+    /// lets that hold press the button.
+    private func handleFlagsChanged(event: CGEvent) -> Unmanaged<CGEvent>? {
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard let modifier = Self.modifierFlags(forKeyCode: keyCode) else {
+            return Unmanaged.passRetained(event)
+        }
+        let isDown = event.flags.contains(modifier.device)
+
+        if case .autoMouseHoldKey = settings.captureTarget {
+            if isDown, settings.handleCapturedKeyCode(keyCode) {
+                pendingCaptureSwallowModifier = keyCode
+                return nil
+            }
+        }
+        if !isDown, pendingCaptureSwallowModifier == keyCode {
+            pendingCaptureSwallowModifier = nil
+            return nil
+        }
+
+        if !isDown, let press = layerPresses[keyCode] {
+            layerPresses[keyCode] = nil
+            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount)
+            if autoMouseActive {
+                scheduleAutoMouseExit()
+            }
+            return nil
+        }
+        if isDown, autoMouseActive, settings.isEnabled, layerPresses[keyCode] == nil,
+           let button = settings.autoMouseButton(forHoldKeyCode: keyCode) {
+            pressLayerButton(Self.mouseButton(for: button), keyCode: keyCode, modifierFlags: modifier.all)
+            return nil
+        }
+        return Unmanaged.passRetained(event)
+    }
+
+    /// The generic flag and the device-specific bit (left or right side) of a modifier key.
+    private static func modifierFlags(forKeyCode keyCode: Int64) -> (all: CGEventFlags, device: CGEventFlags)? {
+        let pairs: [Int: (CGEventFlags, UInt64)] = [
+            kVK_Control: (.maskControl, 0x0001), kVK_RightControl: (.maskControl, 0x2000),
+            kVK_Shift: (.maskShift, 0x0002), kVK_RightShift: (.maskShift, 0x0004),
+            kVK_Command: (.maskCommand, 0x0008), kVK_RightCommand: (.maskCommand, 0x0010),
+            kVK_Option: (.maskAlternate, 0x0020), kVK_RightOption: (.maskAlternate, 0x0040)
+        ]
+        guard let (generic, deviceBit) = pairs[Int(keyCode)] else { return nil }
+        let device = CGEventFlags(rawValue: deviceBit)
+        return (generic.union(device), device)
+    }
+
+    /// Flags of modifiers currently holding a layer button.
+    private var layerModifierFlags: CGEventFlags {
+        layerPresses.values.reduce(into: CGEventFlags()) { $0.formUnion($1.modifierFlags) }
+    }
 
     private func updatePointingMonitor(enabled: Bool, device: PointingDeviceID?) {
         pointingMonitorRetryTimer?.invalidate()
@@ -1244,7 +1307,7 @@ final class GestureEngine: ObservableObject {
 
     /// Presses `button` at the pointer. A press soon after a click of the
     /// same button at the same spot continues it as a double or triple click.
-    private func pressLayerButton(_ button: CGMouseButton, keyCode: Int64) {
+    private func pressLayerButton(_ button: CGMouseButton, keyCode: Int64, modifierFlags: CGEventFlags = []) {
         let now = CFAbsoluteTimeGetCurrent()
         let position = currentCursorPosition()
         var count: Int64 = 1
@@ -1254,7 +1317,7 @@ final class GestureEngine: ObservableObject {
             count = last.count + 1
         }
         lastLayerClick = (button, now, position, count)
-        layerPresses[keyCode] = LayerPress(button: button, clickCount: count)
+        layerPresses[keyCode] = LayerPress(button: button, clickCount: count, modifierFlags: modifierFlags)
         postDragEvent(.down, button: button, at: position, clickCount: count)
     }
 
@@ -1276,6 +1339,7 @@ final class GestureEngine: ObservableObject {
         }
         event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(press.button.rawValue))
         event.setIntegerValueField(.mouseEventClickState, value: press.clickCount)
+        event.flags = event.flags.subtracting(layerModifierFlags)
         return Unmanaged.passRetained(event)
     }
 

@@ -139,6 +139,7 @@ enum KeyCaptureTarget: Equatable {
     case gestureTrigger
     case threeDTrigger(ThreeDAction)
     case autoMouseButton(AutoMouseButton)
+    case autoMouseHoldKey(AutoMouseButton)
 }
 
 @MainActor
@@ -168,6 +169,9 @@ final class AppSettings: ObservableObject {
         static let autoMouseTimeout = "BallGesture.autoMouseTimeout"
         static func autoMouseKeyCode(_ button: AutoMouseButton) -> String {
             "BallGesture.autoMouseKeyCode.\(button.rawValue)"
+        }
+        static func autoMouseHoldKeyCode(_ button: AutoMouseButton) -> String {
+            "BallGesture.autoMouseHoldKeyCode.\(button.rawValue)"
         }
     }
 
@@ -285,6 +289,21 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// A second key per button, usually a modifier, for keyboards whose
+    /// layer key sends a modifier when held (home row mods): the key itself
+    /// arrives only when tapped, so holding it to drag needs the modifier.
+    @Published private(set) var autoMouseHoldKeyCodes: [AutoMouseButton: Int64] {
+        didSet {
+            for button in AutoMouseButton.allCases {
+                if let keyCode = autoMouseHoldKeyCodes[button] {
+                    defaults.set(keyCode, forKey: Keys.autoMouseHoldKeyCode(button))
+                } else {
+                    defaults.removeObject(forKey: Keys.autoMouseHoldKeyCode(button))
+                }
+            }
+        }
+    }
+
     /// Non-persisted UI state: which trigger key is currently being captured.
     @Published var captureTarget: KeyCaptureTarget?
     /// Non-persisted UI state: message shown when a capture attempt is rejected.
@@ -327,6 +346,11 @@ final class AppSettings: ObservableObject {
                 ?? Self.defaultAutoMouseKeyCode(button)
         }
         autoMouseKeyCodes = autoMouseKeys
+        var autoMouseHoldKeys: [AutoMouseButton: Int64] = [:]
+        for button in AutoMouseButton.allCases {
+            autoMouseHoldKeys[button] = defaults.object(forKey: Keys.autoMouseHoldKeyCode(button)) as? Int64
+        }
+        autoMouseHoldKeyCodes = autoMouseHoldKeys
     }
 
     func autoMouseKeyCode(for button: AutoMouseButton) -> Int64 {
@@ -336,6 +360,15 @@ final class AppSettings: ObservableObject {
     /// The mouse button `keyCode` turns into while the auto mouse layer is on, if any.
     func autoMouseButton(forKeyCode keyCode: Int64) -> AutoMouseButton? {
         AutoMouseButton.allCases.first { autoMouseKeyCode(for: $0) == keyCode }
+    }
+
+    /// The mouse button holding `keyCode` presses while the auto mouse layer is on, if any.
+    func autoMouseButton(forHoldKeyCode keyCode: Int64) -> AutoMouseButton? {
+        AutoMouseButton.allCases.first { autoMouseHoldKeyCodes[$0] == keyCode }
+    }
+
+    func clearAutoMouseHoldKey(for button: AutoMouseButton) {
+        autoMouseHoldKeyCodes[button] = nil
     }
 
     func threeDTriggerKeyCode(for action: ThreeDAction) -> Int64 {
@@ -393,6 +426,8 @@ final class AppSettings: ObservableObject {
             (.threeDTrigger($0), threeDTriggerKeyCode(for: $0), "3D \($0.displayName)")
         } + AutoMouseButton.allCases.map {
             (.autoMouseButton($0), autoMouseKeyCode(for: $0), $0.displayName)
+        } + AutoMouseButton.allCases.compactMap { button in
+            autoMouseHoldKeyCodes[button].map { (.autoMouseHoldKey(button), $0, "\(button.displayName) (Held)") }
         }
         let otherKeys = assignedKeys.filter { $0.0 != target }
 
@@ -410,6 +445,7 @@ final class AppSettings: ObservableObject {
         case .gestureTrigger: gestureTriggerKeyCode = keyCode
         case .threeDTrigger(let action): threeDTriggerKeyCodes[action] = keyCode
         case .autoMouseButton(let button): autoMouseKeyCodes[button] = keyCode
+        case .autoMouseHoldKey(let button): autoMouseHoldKeyCodes[button] = keyCode
         }
         captureErrorMessage = nil
         captureTarget = nil

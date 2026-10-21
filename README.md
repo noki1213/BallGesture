@@ -123,11 +123,13 @@ For a trackball and a keyboard that are separate devices, the way keyboard firmw
 
 Holding a key and moving the ball drags; pressing it twice quickly double-clicks, and modifiers held with it apply to the click. The layer turns off once the pointer has rested for the set time (700 ms by default), or at once when any other key is pressed, so typing right after moving the ball is not held up. A slight bump of the ball while typing does not turn it on.
 
+Keyboards with home row mods send a modifier instead of the letter while J, K or L is held, so holding the letter alone cannot drag. Set **Hold Keys** to those modifiers (for example Right Control, Right Command and Right Option): while the layer is on, holding the key presses the button once the keyboard sends its modifier, and the modifier itself is kept off the click.
+
 **Device** chooses whose movement turns the layer on. **Any Pointer** reacts to every mouse and trackpad. Choosing one device — your trackball, so the trackpad does not turn on the layer — needs Input Monitoring permission as well (System Settings → Privacy & Security → Input Monitoring), because only the HID layer knows which device moved.
 
 ## Settings
 
-Click the menu bar icon to open the settings popover.
+Click the menu bar icon to open the settings popover. Settings are grouped in tabs by mode — Scroll, Zoom, Gesture, 3D and Mouse — and each tab holds that mode's trigger keys.
 
 | Setting | Default | Range |
 | --- | --- | --- |
@@ -145,6 +147,7 @@ Click the menu bar icon to open the settings popover.
 | Auto Mouse Layer | Off | — |
 | Auto Mouse Layer device | Any Pointer | Any Pointer or one connected device |
 | Auto Mouse Layer keys | Left: J, Right: K, Middle: L | Any key; a key already in use cannot be reused |
+| Auto Mouse Layer hold keys | None | Any key, including modifiers |
 | Auto Mouse Layer time | 700 ms | 200 – 2000 ms |
 
 The popover also shows live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
@@ -320,11 +323,13 @@ Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate
 
 キーを押したままボールを動かすとドラッグ、すばやく2回押すとダブルクリックになり、一緒に押した修飾キーはクリックに付きます。ポインタが設定した時間（初期値 700 ms）止まっているか、ほかのキーを押すとすぐに切れるので、ボールを動かした直後に文字を打っても待たされません。打っている途中にボールに少し触れたくらいでは入りません。
 
+ホームロウモッドを使うキーボードは、J・K・L を長押しすると文字ではなく修飾キーを送るので、文字だけではドラッグできません。**Hold Keys** にその修飾キー（たとえば右 Control・右 Command・右 Option）を設定すると、レイヤー中に長押ししてキーボードが修飾キーを送ったところでボタンが押されます。修飾キーそのものはクリックに付きません。
+
 **Device** で、どの機器の動きでレイヤーに入るかを選びます。**Any Pointer** はすべてのマウスとトラックパッドに反応します。1台だけ（トラックパッドで入らないようにトラックボールだけ、など）を選ぶときは、どの機器が動いたかを HID から読むため、入力監視の権限も要ります（システム設定 → プライバシーとセキュリティ → 入力監視）。
 
 ## 設定項目
 
-メニューバーのアイコンをクリックすると設定画面が開きます。
+メニューバーのアイコンをクリックすると設定画面が開きます。設定はモードごとのタブ（Scroll・Zoom・Gesture・3D・Mouse）に分かれていて、トリガーキーもそれぞれのタブにあります。
 
 | 設定 | 初期値 | 範囲 |
 | --- | --- | --- |
@@ -342,6 +347,7 @@ Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate
 | Auto Mouse Layer | オフ | — |
 | Auto Mouse Layer の機器 | Any Pointer | Any Pointer か、つながっている1台 |
 | Auto Mouse Layer のキー | 左: J、右: K、中: L | 任意のキー。他で使用中のキーは選択不可 |
+| Auto Mouse Layer の長押しキー | なし | 修飾キーを含む任意のキー |
 | Auto Mouse Layer の時間 | 700 ms | 200 – 2000 ms |
 
 アクセシビリティの状態も表示されます。緑はイベントタップ稼働中、黄は権限待ちで自動リトライ中、赤は未許可です。

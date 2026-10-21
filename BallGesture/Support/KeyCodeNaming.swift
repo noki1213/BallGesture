@@ -32,6 +32,10 @@ enum KeyCodeNaming {
         Int64(kVK_Escape): "Escape", Int64(kVK_Delete): "Delete", Int64(kVK_ForwardDelete): "Forward Delete",
         Int64(kVK_LeftArrow): "Left Arrow", Int64(kVK_RightArrow): "Right Arrow",
         Int64(kVK_UpArrow): "Up Arrow", Int64(kVK_DownArrow): "Down Arrow",
+        Int64(kVK_Control): "Left Control", Int64(kVK_RightControl): "Right Control",
+        Int64(kVK_Option): "Left Option", Int64(kVK_RightOption): "Right Option",
+        Int64(kVK_Command): "Left Command", Int64(kVK_RightCommand): "Right Command",
+        Int64(kVK_Shift): "Left Shift", Int64(kVK_RightShift): "Right Shift",
         Int64(kVK_Home): "Home", Int64(kVK_End): "End", Int64(kVK_PageUp): "Page Up", Int64(kVK_PageDown): "Page Down"
     ]
 
