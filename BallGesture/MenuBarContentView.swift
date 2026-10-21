@@ -10,6 +10,23 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// One page of the settings, by mode.
+private enum SettingsTab: String, CaseIterable, Identifiable {
+    case scroll, zoom, gesture, threeD, mouse
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .scroll: return "Scroll"
+        case .zoom: return "Zoom"
+        case .gesture: return "Gesture"
+        case .threeD: return "3D"
+        case .mouse: return "Mouse"
+        }
+    }
+}
+
 struct MenuBarContentView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var engine = GestureEngine.shared
@@ -20,6 +37,8 @@ struct MenuBarContentView: View {
     @State private var selectedThreeDApp = ""
     @State private var pointingDevices = PointingDeviceMonitor.connectedDevices()
     @Namespace private var threeDAppNamespace
+    @Namespace private var tabNamespace
+    @State private var selectedTab: SettingsTab = .scroll
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
@@ -34,27 +53,24 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            triggerKeySection
+            tabBar
 
-            Divider()
+            Group {
+                switch selectedTab {
+                case .scroll: scrollSection
+                case .zoom: zoomSection
+                case .gesture: gestureSection
+                case .threeD: threeDSection
+                case .mouse: autoMouseSection
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            scrollSection
-
-            Divider()
-
-            zoomSection
-
-            Divider()
-
-            gestureSection
-
-            Divider()
-
-            threeDSection
-
-            Divider()
-
-            autoMouseSection
+            if let message = settings.captureErrorMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
 
             Divider()
 
@@ -63,7 +79,7 @@ struct MenuBarContentView: View {
             }
         }
         .padding(12)
-        .frame(width: 300)
+        .frame(width: 320)
         .onReceive(refreshTimer) { _ in
             isAccessibilityTrusted = AccessibilityPermission.isTrusted
             pointingDevices = PointingDeviceMonitor.connectedDevices()
@@ -139,25 +155,30 @@ struct MenuBarContentView: View {
         }
     }
 
-    private var triggerKeySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Trigger Keys").font(.headline)
-
-            keyRow(title: "Scroll Mode", keyCode: settings.scrollTriggerKeyCode, target: .scrollTrigger)
-            keyRow(title: "Zoom Mode", keyCode: settings.zoomTriggerKeyCode, target: .zoomTrigger)
-            keyRow(title: "Gesture Mode", keyCode: settings.gestureTriggerKeyCode, target: .gestureTrigger)
-            ForEach(ThreeDAction.allCases) { action in
-                keyRow(
-                    title: "3D \(action.displayName)",
-                    keyCode: settings.threeDTriggerKeyCode(for: action),
-                    target: .threeDTrigger(action)
-                )
-            }
-
-            if let message = settings.captureErrorMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.red)
+    /// The selection pill is a single view that glides to the chosen tab.
+    private var tabBar: some View {
+        HStack(spacing: 2) {
+            ForEach(SettingsTab.allCases) { tab in
+                let isSelected = selectedTab == tab
+                Text(tab.title)
+                    .font(.subheadline)
+                    .foregroundColor(isSelected ? Color(red: 0xfc / 255, green: 0xfc / 255, blue: 0xfa / 255) : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(Color(red: 0x33 / 255, green: 0xA5 / 255, blue: 0xA5 / 255).opacity(0.3))
+                                .matchedGeometryEffect(id: "settingsTab", in: tabNamespace)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        settings.cancelCapture()
+                        withAnimation(reduceMotion ? .easeOut(duration: 0.1) : .timingCurve(0.65, 0, 0.35, 1, duration: 0.4)) {
+                            selectedTab = tab
+                        }
+                    }
             }
         }
     }
@@ -185,7 +206,7 @@ struct MenuBarContentView: View {
 
     private var scrollSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Scroll Mode").font(.headline)
+            keyRow(title: "Trigger Key", keyCode: settings.scrollTriggerKeyCode, target: .scrollTrigger)
             Toggle("Natural scrolling direction", isOn: $settings.naturalScrollDirection)
             sensitivitySlider(title: "Sensitivity", value: $settings.scrollSensitivity)
             Toggle("Momentum scrolling", isOn: $settings.momentumScrollingEnabled)
@@ -200,7 +221,13 @@ struct MenuBarContentView: View {
 
     private var threeDSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("3D Mode").font(.headline)
+            ForEach(ThreeDAction.allCases) { action in
+                keyRow(
+                    title: "\(action.displayName) Key",
+                    keyCode: settings.threeDTriggerKeyCode(for: action),
+                    target: .threeDTrigger(action)
+                )
+            }
             Text("Apps").font(.caption)
             VStack(alignment: .leading, spacing: 2) {
                 threeDAppRow(
@@ -412,9 +439,7 @@ struct MenuBarContentView: View {
 
     private var autoMouseSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: $settings.autoMouseEnabled) {
-                Text("Auto Mouse Layer").font(.headline)
-            }
+            Toggle("Auto Mouse Layer", isOn: $settings.autoMouseEnabled)
             Text("While the pointer moves, these keys click instead of typing.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -442,6 +467,14 @@ struct MenuBarContentView: View {
                         target: .autoMouseButton(button)
                     )
                 }
+                Text("Hold Keys").font(.caption)
+                Text("For keys that send a modifier when held, such as home row mods: holding sends that modifier, which then holds the button to drag.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(AutoMouseButton.allCases) { button in
+                    holdKeyRow(button)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Stays On After Moving").font(.caption)
                     Slider(value: $settings.autoMouseTimeout, in: 0.2...2.0, step: 0.1)
@@ -449,6 +482,40 @@ struct MenuBarContentView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+            }
+        }
+    }
+
+    private func holdKeyRow(_ button: AutoMouseButton) -> some View {
+        let target = KeyCaptureTarget.autoMouseHoldKey(button)
+        let keyCode = settings.autoMouseHoldKeyCodes[button]
+        return HStack {
+            Text(button.displayName)
+            Spacer()
+            if settings.captureTarget == target {
+                Text("Press any key…")
+                    .foregroundColor(.secondary)
+                Button("Cancel") {
+                    settings.cancelCapture()
+                }
+            } else {
+                Text(keyCode.map(KeyCodeNaming.displayName(for:)) ?? "None")
+                    .foregroundColor(.secondary)
+                if keyCode != nil {
+                    Button {
+                        settings.clearAutoMouseHoldKey(for: button)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .help("Remove")
+                }
+                Button("Set Key") {
+                    settings.beginCapture(for: target)
+                }
+                .disabled(settings.captureTarget != nil)
             }
         }
     }
@@ -463,7 +530,7 @@ struct MenuBarContentView: View {
 
     private var zoomSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Zoom Mode").font(.headline)
+            keyRow(title: "Trigger Key", keyCode: settings.zoomTriggerKeyCode, target: .zoomTrigger)
             Picker("Method", selection: $settings.zoomMethod) {
                 ForEach(ZoomMethod.allCases) { method in
                     Text(method.displayName).tag(method)
@@ -476,7 +543,7 @@ struct MenuBarContentView: View {
 
     private var gestureSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Gesture Mode").font(.headline)
+            keyRow(title: "Trigger Key", keyCode: settings.gestureTriggerKeyCode, target: .gestureTrigger)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Trigger Distance (px)").font(.caption)
                 Slider(value: $settings.gestureDistance, in: 10.0...200.0, step: 10.0)
