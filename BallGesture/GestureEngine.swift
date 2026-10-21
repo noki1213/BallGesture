@@ -1391,18 +1391,29 @@ final class GestureEngine: ObservableObject {
     }
 
     /// While a layer key is held, pointer movement is a drag of its button.
+    /// The device's move is replaced by a new drag event rather than
+    /// retyped: a retyped move still reads as a plain move to the window
+    /// server, which then never moves a window grabbed by its title bar.
     private func dragLayerButton(event: CGEvent) -> Unmanaged<CGEvent>? {
         let presses = Array(layerPresses.values)
         let press = presses.first { $0.button == .left } ?? presses.first { $0.button == .right } ?? presses[0]
+        let type: CGEventType
         switch press.button {
-        case .left: event.type = .leftMouseDragged
-        case .right: event.type = .rightMouseDragged
-        default: event.type = .otherMouseDragged
+        case .left: type = .leftMouseDragged
+        case .right: type = .rightMouseDragged
+        default: type = .otherMouseDragged
         }
-        event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(press.button.rawValue))
-        event.setIntegerValueField(.mouseEventClickState, value: press.clickCount)
-        event.flags = event.flags.subtracting(layerModifierFlags)
-        return Unmanaged.passRetained(event)
+        guard let drag = CGEvent(
+            mouseEventSource: nil, mouseType: type, mouseCursorPosition: event.location, mouseButton: press.button
+        ) else {
+            return Unmanaged.passRetained(event)
+        }
+        drag.setIntegerValueField(.mouseEventClickState, value: press.clickCount)
+        drag.setIntegerValueField(.mouseEventDeltaX, value: event.getIntegerValueField(.mouseEventDeltaX))
+        drag.setIntegerValueField(.mouseEventDeltaY, value: event.getIntegerValueField(.mouseEventDeltaY))
+        drag.flags = event.flags.subtracting(layerModifierFlags)
+        drag.post(tap: Self.layerTap(for: press.button))
+        return nil
     }
 
     private static func mouseButton(for button: AutoMouseButton) -> CGMouseButton {
