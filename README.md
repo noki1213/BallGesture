@@ -111,6 +111,20 @@ Apps that navigate differently get their own settings. The 3D Mode section lists
 
 With Fusion's mouse navigation instead, use Middle Drag for Pan and Shift + Middle Drag for Rotate.
 
+### Auto Mouse Layer — move the ball, then press J / K / L
+
+For a trackball and a keyboard that are separate devices, the way keyboard firmware such as QMK or ZMK switches to a mouse layer while the ball moves. Turn on **Auto Mouse Layer** in the menu. Once the pointer moves, these keys click at the pointer instead of typing:
+
+| Key | Sends |
+| --- | --- |
+| J | Left click |
+| K | Right click |
+| L | Middle click |
+
+Holding a key and moving the ball drags; pressing it twice quickly double-clicks, and modifiers held with it apply to the click. The layer turns off once the pointer has rested for the set time (700 ms by default), or at once when any other key is pressed, so typing right after moving the ball is not held up. A slight bump of the ball while typing does not turn it on.
+
+**Device** chooses whose movement turns the layer on. **Any Pointer** reacts to every mouse and trackpad. Choosing one device — your trackball, so the trackpad does not turn on the layer — needs Input Monitoring permission as well (System Settings → Privacy & Security → Input Monitoring), because only the HID layer knows which device moved.
+
 ## Settings
 
 Click the menu bar icon to open the settings popover.
@@ -128,6 +142,10 @@ Click the menu bar icon to open the settings popover.
 | Gesture distance | 50 px | 10 – 200 px |
 | 3D output and Reverse | Pan: Right Drag, Zoom: Wheel, Rotate: Left Drag | Per action, for all apps or per app |
 | 3D sensitivity | 1.0 | 0.1 – 5.0 |
+| Auto Mouse Layer | Off | — |
+| Auto Mouse Layer device | Any Pointer | Any Pointer or one connected device |
+| Auto Mouse Layer keys | Left: J, Right: K, Middle: L | Any key; a key already in use cannot be reused |
+| Auto Mouse Layer time | 700 ms | 200 – 2000 ms |
 
 The popover also shows live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
 
@@ -141,6 +159,7 @@ BallGesture reads keyboard and mouse events, so it is worth being explicit about
 - **Nothing is recorded.** Events are inspected in memory to decide whether a trigger key is held, then discarded. No keystroke or pointer data is written to disk.
 - **The only thing stored** is your settings, in the plist file listed above.
 - **Accessibility permission** is required because macOS gates event taps behind it. This is the same permission used by tools like Karabiner-Elements and Mac Mouse Fix.
+- **Input Monitoring permission** is requested only when the Auto Mouse Layer watches one chosen device. BallGesture then reads that device's movement reports, and nothing else.
 
 The source is here in full, so you can verify all of this rather than take my word for it.
 
@@ -289,6 +308,20 @@ CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面�
 
 Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate を Shift + Middle Drag にします。
 
+### Auto Mouse Layer — ボールを動かしてから J / K / L
+
+トラックボールとキーボードが別々の機器でも、QMK や ZMK などのキーボードのファームウェアが持つ「ボールを動かしている間だけマウスレイヤーに切り替わる」動きを使えます。メニューで **Auto Mouse Layer** をオンにします。ポインタが動くと、次のキーが文字の代わりにポインタの位置でクリックします。
+
+| キー | 送るもの |
+| --- | --- |
+| J | 左クリック |
+| K | 右クリック |
+| L | 中クリック |
+
+キーを押したままボールを動かすとドラッグ、すばやく2回押すとダブルクリックになり、一緒に押した修飾キーはクリックに付きます。ポインタが設定した時間（初期値 700 ms）止まっているか、ほかのキーを押すとすぐに切れるので、ボールを動かした直後に文字を打っても待たされません。打っている途中にボールに少し触れたくらいでは入りません。
+
+**Device** で、どの機器の動きでレイヤーに入るかを選びます。**Any Pointer** はすべてのマウスとトラックパッドに反応します。1台だけ（トラックパッドで入らないようにトラックボールだけ、など）を選ぶときは、どの機器が動いたかを HID から読むため、入力監視の権限も要ります（システム設定 → プライバシーとセキュリティ → 入力監視）。
+
 ## 設定項目
 
 メニューバーのアイコンをクリックすると設定画面が開きます。
@@ -306,6 +339,10 @@ Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate
 | ジェスチャー距離 | 50 px | 10 – 200 px |
 | 3D の送るもの・Reverse | Pan: Right Drag、Zoom: Wheel、Rotate: Left Drag | 操作ごと。全アプリ共通かアプリごと |
 | 3D の感度 | 1.0 | 0.1 – 5.0 |
+| Auto Mouse Layer | オフ | — |
+| Auto Mouse Layer の機器 | Any Pointer | Any Pointer か、つながっている1台 |
+| Auto Mouse Layer のキー | 左: J、右: K、中: L | 任意のキー。他で使用中のキーは選択不可 |
+| Auto Mouse Layer の時間 | 700 ms | 200 – 2000 ms |
 
 アクセシビリティの状態も表示されます。緑はイベントタップ稼働中、黄は権限待ちで自動リトライ中、赤は未許可です。
 
@@ -319,6 +356,7 @@ Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate
 - **入力は記録しません。** イベントはトリガーキーが押されているかを判定するためだけにメモリ上で参照し、そのまま破棄します。キー入力やポインタの情報をディスクに書き出すことはありません。
 - **保存しているのは設定だけ**で、上に書いた plist ファイルに入っています。
 - **アクセシビリティ権限が必要な理由**は、macOS がイベントタップをこの権限の下に置いているためです。Karabiner-Elements や Mac Mouse Fix が要求するものと同じ権限です。
+- **入力監視の権限**は、Auto Mouse Layer で機器を1台選んだときだけ求めます。そのとき読むのは、選んだ機器の動きの報告だけです。
 
 ソースコードは全て公開されているので、以上は実際に確認できます。
 
