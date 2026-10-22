@@ -198,13 +198,26 @@ final class GestureEngine: ObservableObject {
         /// Set when a modifier key holds the button. The system still sees
         /// the modifier as down, so its flags are kept off the mouse events.
         var modifierFlags: CGEventFlags = []
+        let pressedAt: CFAbsoluteTime
+        let position: CGPoint
+        /// Drag events posted while held, for the release log.
+        var dragCount = 0
+        /// Device movement since the press, until it passes `layerDragThreshold`.
+        var pendingMovement = CGPoint.zero
+        var isDragging = false
     }
+    /// Movement a held layer button needs before it drags. The ball often
+    /// still rolls a little as a key is pressed, and without this the
+    /// press turns into a short drag that moves a tab or a window.
+    private static let layerDragThreshold: CGFloat = 10
     /// Modifier swallowed by key capture whose release must be swallowed too.
     private var pendingCaptureSwallowModifier: Int64?
     /// Layer keys currently held, by keycode. A held key stays a mouse
     /// button until its keyUp, even if the layer times out meanwhile.
     private var layerPresses: [Int64: LayerPress] = [:]
     private var lastLayerClick: (button: CGMouseButton, time: CFAbsoluteTime, position: CGPoint, count: Int64)?
+    /// When the pointer last moved, for the layer press log.
+    private var lastPointerMoveTime: CFAbsoluteTime = 0
 
     @Published private(set) var pointingMonitorNeedsAccess = false
 
@@ -247,7 +260,9 @@ final class GestureEngine: ObservableObject {
             (1 << CGEventType.flagsChanged.rawValue) |
             (1 << CGEventType.mouseMoved.rawValue) |
             (1 << CGEventType.leftMouseDown.rawValue) |
-            (1 << CGEventType.rightMouseDown.rawValue)
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.leftMouseUp.rawValue) |
+            (1 << CGEventType.rightMouseUp.rawValue)
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
@@ -391,7 +406,9 @@ final class GestureEngine: ObservableObject {
         event: CGEvent
     ) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            Self.logger.notice("Event tap was disabled (timeout or user input); re-enabling.")
+            Self.logger.notice(
+                "Event tap was disabled (timeout or user input); re-enabling. layerPresses=\(self.layerPresses.count, privacy: .public)"
+            )
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
@@ -406,7 +423,11 @@ final class GestureEngine: ObservableObject {
             return handleFlagsChanged(event: event)
         case .mouseMoved:
             return handleMouseMoved(event: event)
+        case .leftMouseUp, .rightMouseUp:
+            logMouseButton(type: type, event: event)
+            return Unmanaged.passRetained(event)
         case .leftMouseDown, .rightMouseDown:
+            logMouseButton(type: type, event: event)
             // A click during momentum scrolling should stop it, so an
             // in-flight inertial scroll doesn't keep scrolling the page out
             // from under an unrelated click. Always pass the click through
@@ -419,6 +440,23 @@ final class GestureEngine: ObservableObject {
         default:
             return Unmanaged.passRetained(event)
         }
+    }
+
+    /// Logs every left and right press and release, whether from the
+    /// device or posted by this app, to trace clicks that turn into drags.
+    private func logMouseButton(type: CGEventType, event: CGEvent) {
+        let name: String
+        switch type {
+        case .leftMouseDown: name = "leftDown"
+        case .leftMouseUp: name = "leftUp"
+        case .rightMouseDown: name = "rightDown"
+        default: name = "rightUp"
+        }
+        let pid = event.getIntegerValueField(.eventSourceUnixProcessID)
+        let posted = pid == Int64(ProcessInfo.processInfo.processIdentifier)
+        Self.logger.notice(
+            "Mouse \(name, privacy: .public) posted=\(posted, privacy: .public) pid=\(pid, privacy: .public) count=\(event.getIntegerValueField(.mouseEventClickState), privacy: .public) at=(\(Int(event.location.x), privacy: .public),\(Int(event.location.y), privacy: .public))"
+        )
     }
 
     private func handleKeyEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -466,13 +504,9 @@ final class GestureEngine: ObservableObject {
             return Unmanaged.passRetained(event)
         }
 
-        if let press = layerPresses[keyCode] {
+        if layerPresses[keyCode] != nil {
             if type == .keyUp {
-                layerPresses[keyCode] = nil
-                postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
-                if autoMouseActive {
-                    scheduleAutoMouseExit()
-                }
+                releaseLayerPress(keyCode: keyCode)
             }
             return nil
         }
@@ -619,6 +653,7 @@ final class GestureEngine: ObservableObject {
     }
 
     private func handleMouseMoved(event: CGEvent) -> Unmanaged<CGEvent>? {
+        lastPointerMoveTime = CFAbsoluteTimeGetCurrent()
         if settings.autoMouseDevice == nil {
             noteAutoMouseMovement(
                 dx: Int(event.getIntegerValueField(.mouseEventDeltaX)),
@@ -1233,12 +1268,8 @@ final class GestureEngine: ObservableObject {
             return nil
         }
 
-        if !isDown, let press = layerPresses[keyCode] {
-            layerPresses[keyCode] = nil
-            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
-            if autoMouseActive {
-                scheduleAutoMouseExit()
-            }
+        if !isDown, layerPresses[keyCode] != nil {
+            releaseLayerPress(keyCode: keyCode)
             return nil
         }
         if isDown, autoMouseActive, settings.isEnabled, layerPresses[keyCode] == nil,
@@ -1379,24 +1410,52 @@ final class GestureEngine: ObservableObject {
             count = last.count + 1
         }
         lastLayerClick = (button, now, position, count)
-        layerPresses[keyCode] = LayerPress(button: button, clickCount: count, modifierFlags: modifierFlags)
+        layerPresses[keyCode] = LayerPress(
+            button: button, clickCount: count, modifierFlags: modifierFlags, pressedAt: now, position: position
+        )
         postDragEvent(.down, button: button, at: position, clickCount: count, tap: Self.layerTap(for: button))
+        Self.logger.notice(
+            "Layer press DOWN key=\(keyCode, privacy: .public) button=\(button.rawValue, privacy: .public) count=\(count, privacy: .public) hold=\(!modifierFlags.isEmpty, privacy: .public) at=(\(Int(position.x), privacy: .public),\(Int(position.y), privacy: .public)) msSinceMove=\(Int((now - self.lastPointerMoveTime) * 1000), privacy: .public)"
+        )
+    }
+
+    private func releaseLayerPress(keyCode: Int64, reason: String = "key released") {
+        guard let press = layerPresses.removeValue(forKey: keyCode) else { return }
+        // A press that never dragged releases where it went down, so it stays a click.
+        let position = press.isDragging ? currentCursorPosition() : press.position
+        postDragEvent(.up, button: press.button, at: position, clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
+        if autoMouseActive {
+            scheduleAutoMouseExit()
+        }
+        Self.logger.notice(
+            "Layer press UP key=\(keyCode, privacy: .public) (\(reason, privacy: .public)) heldMs=\(Int((CFAbsoluteTimeGetCurrent() - press.pressedAt) * 1000), privacy: .public) drags=\(press.dragCount, privacy: .public) moved=(\(Int(position.x - press.position.x), privacy: .public),\(Int(position.y - press.position.y), privacy: .public))"
+        )
     }
 
     private func releaseLayerPresses() {
-        for press in layerPresses.values {
-            postDragEvent(.up, button: press.button, at: currentCursorPosition(), clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
+        for keyCode in Array(layerPresses.keys) {
+            releaseLayerPress(keyCode: keyCode, reason: "all released")
         }
-        layerPresses.removeAll()
     }
 
     /// While a layer key is held, pointer movement is a drag of its button.
     /// The device's move is replaced by a new drag event rather than
     /// retyped: a retyped move still reads as a plain move to the window
     /// server, which then never moves a window grabbed by its title bar.
+    /// Movement within `layerDragThreshold` of the press is dropped.
     private func dragLayerButton(event: CGEvent) -> Unmanaged<CGEvent>? {
-        let presses = Array(layerPresses.values)
-        let press = presses.first { $0.button == .left } ?? presses.first { $0.button == .right } ?? presses[0]
+        let presses = Array(layerPresses)
+        let (keyCode, press) = presses.first { $0.value.button == .left }
+            ?? presses.first { $0.value.button == .right } ?? presses[0]
+        if !press.isDragging {
+            var movement = press.pendingMovement
+            movement.x += CGFloat(event.getIntegerValueField(.mouseEventDeltaX))
+            movement.y += CGFloat(event.getIntegerValueField(.mouseEventDeltaY))
+            layerPresses[keyCode]?.pendingMovement = movement
+            guard hypot(movement.x, movement.y) >= Self.layerDragThreshold else { return nil }
+            layerPresses[keyCode]?.isDragging = true
+        }
+        layerPresses[keyCode]?.dragCount += 1
         let type: CGEventType
         switch press.button {
         case .left: type = .leftMouseDragged
