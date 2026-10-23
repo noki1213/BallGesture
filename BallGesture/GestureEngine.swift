@@ -216,6 +216,8 @@ final class GestureEngine: ObservableObject {
     /// button until its keyUp, even if the layer times out meanwhile.
     private var layerPresses: [Int64: LayerPress] = [:]
     private var lastLayerClick: (button: CGMouseButton, time: CFAbsoluteTime, position: CGPoint, count: Int64)?
+    /// When and why the layer last turned off, for the log of layer keys that typed.
+    private var lastAutoMouseExit: (time: CFAbsoluteTime, reason: String) = (0, "never on")
     /// When the pointer last moved, for the layer press log.
     private var lastPointerMoveTime: CFAbsoluteTime = 0
 
@@ -578,7 +580,13 @@ final class GestureEngine: ObservableObject {
         }
 
         if type == .keyDown, autoMouseActive {
-            exitAutoMouseLayer(reason: "other key pressed")
+            exitAutoMouseLayer(reason: "other key pressed (keyCode=\(keyCode))")
+        } else if type == .keyDown, !isRepeat, settings.autoMouseEnabled,
+                  settings.autoMouseButton(forKeyCode: keyCode) != nil {
+            let now = CFAbsoluteTimeGetCurrent()
+            Self.logger.notice(
+                "Layer key typed keyCode=\(keyCode, privacy: .public): layer off for \(Int((now - self.lastAutoMouseExit.time) * 1000), privacy: .public) ms (\(self.lastAutoMouseExit.reason, privacy: .public)) msSinceMove=\(Int((now - self.lastPointerMoveTime) * 1000), privacy: .public) entryMovement=\(self.autoMouseEntryMovement, privacy: .public)"
+            )
         }
         return Unmanaged.passRetained(event)
     }
@@ -1368,7 +1376,8 @@ final class GestureEngine: ObservableObject {
             autoMouseEntryMovement += abs(dx) + abs(dy)
             guard autoMouseEntryMovement >= Self.autoMouseEntryThreshold else { return }
             autoMouseActive = true
-            Self.logger.notice("Auto mouse layer ON.")
+            // Secure Input hides key events from the tap, so layer keys type.
+            Self.logger.notice("Auto mouse layer ON (secureInput=\(IsSecureEventInputEnabled(), privacy: .public)).")
         }
         scheduleAutoMouseExit()
     }
@@ -1395,7 +1404,8 @@ final class GestureEngine: ObservableObject {
         autoMouseEntryMovement = 0
         guard autoMouseActive else { return }
         autoMouseActive = false
-        Self.logger.notice("Auto mouse layer OFF (\(reason, privacy: .public)).")
+        lastAutoMouseExit = (CFAbsoluteTimeGetCurrent(), reason)
+        Self.logger.notice("Auto mouse layer OFF (\(reason, privacy: .public), secureInput=\(IsSecureEventInputEnabled(), privacy: .public)).")
     }
 
     /// Presses `button` at the pointer. A press soon after a click of the
