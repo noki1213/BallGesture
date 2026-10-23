@@ -216,6 +216,14 @@ final class GestureEngine: ObservableObject {
     /// button until its keyUp, even if the layer times out meanwhile.
     private var layerPresses: [Int64: LayerPress] = [:]
     private var lastLayerClick: (button: CGMouseButton, time: CFAbsoluteTime, position: CGPoint, count: Int64)?
+    /// Shortest time between a layer button's down and up. Keyboards that
+    /// send a tapped key's down and up together make a click of 0 ms, and
+    /// web views can miss its release, leaving the press to drag whatever
+    /// is under the pointer as it moves.
+    private static let layerMinimumClickDuration: TimeInterval = 0.05
+    /// Releases waiting out `layerMinimumClickDuration`, by an ID that only grows.
+    private var pendingLayerReleases: [Int: () -> Void] = [:]
+    private var nextPendingLayerReleaseID = 0
     /// When and why the layer last turned off, for the log of layer keys that typed.
     private var lastAutoMouseExit: (time: CFAbsoluteTime, reason: String) = (0, "never on")
     /// When the pointer last moved, for the layer press log.
@@ -1411,6 +1419,7 @@ final class GestureEngine: ObservableObject {
     /// Presses `button` at the pointer. A press soon after a click of the
     /// same button at the same spot continues it as a double or triple click.
     private func pressLayerButton(_ button: CGMouseButton, keyCode: Int64, modifierFlags: CGEventFlags = []) {
+        flushPendingLayerReleases()
         let now = CFAbsoluteTimeGetCurrent()
         let position = currentCursorPosition()
         var count: Int64 = 1
@@ -1433,7 +1442,22 @@ final class GestureEngine: ObservableObject {
         guard let press = layerPresses.removeValue(forKey: keyCode) else { return }
         // A press that never dragged releases where it went down, so it stays a click.
         let position = press.isDragging ? currentCursorPosition() : press.position
-        postDragEvent(.up, button: press.button, at: position, clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
+        let remaining = Self.layerMinimumClickDuration - (CFAbsoluteTimeGetCurrent() - press.pressedAt)
+        let postUp: () -> Void = { [weak self] in
+            self?.postDragEvent(.up, button: press.button, at: position, clickCount: press.clickCount, tap: Self.layerTap(for: press.button))
+        }
+        if remaining > 0 {
+            let id = nextPendingLayerReleaseID
+            nextPendingLayerReleaseID += 1
+            pendingLayerReleases[id] = postUp
+            DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.pendingLayerReleases.removeValue(forKey: id)?()
+                }
+            }
+        } else {
+            postUp()
+        }
         if autoMouseActive {
             scheduleAutoMouseExit()
         }
@@ -1442,10 +1466,18 @@ final class GestureEngine: ObservableObject {
         )
     }
 
+    /// Posts waiting releases now, so a new press never comes before the last release.
+    private func flushPendingLayerReleases() {
+        let posts = pendingLayerReleases.sorted { $0.key < $1.key }.map(\.value)
+        pendingLayerReleases = [:]
+        posts.forEach { $0() }
+    }
+
     private func releaseLayerPresses() {
         for keyCode in Array(layerPresses.keys) {
             releaseLayerPress(keyCode: keyCode, reason: "all released")
         }
+        flushPendingLayerReleases()
     }
 
     /// While a layer key is held, pointer movement is a drag of its button.
