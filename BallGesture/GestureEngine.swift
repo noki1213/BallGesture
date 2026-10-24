@@ -90,6 +90,7 @@ final class GestureEngine: ObservableObject {
     /// system is under heavy load, and events in that window bypass it) can
     /// be ended instead of turning ordinary pointer movement into scrolling.
     private var verifiableTriggerKeyCodes: Set<Int64> = []
+    private var keyUpWatchdogTimer: Timer?
 
     /// One hold of a 3D trigger key. The binding is resolved from the
     /// frontmost app once, at keyDown, so the output never changes mid-drag.
@@ -195,6 +196,10 @@ final class GestureEngine: ObservableObject {
     private struct LayerPress {
         let button: CGMouseButton
         let clickCount: Int64
+        /// Whether the HID key state showed the key held at the press, so
+        /// its release there can end the press if the keyUp is lost. Hold
+        /// keys never are: their system state is released on purpose.
+        let isVerifiable: Bool
         /// Set when a modifier key holds the button. The system still sees
         /// the modifier as down, so its flags are kept off the mouse events.
         var modifierFlags: CGEventFlags = []
@@ -422,7 +427,8 @@ final class GestureEngine: ObservableObject {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            endModesWhoseTriggerWasReleased()
+            // Key events in the disabled window bypassed the tap, so a keyUp may be gone.
+            endModesWhoseKeyUpWasLost(eventsWereMissed: true)
             return Unmanaged.passRetained(event)
         }
 
@@ -639,33 +645,85 @@ final class GestureEngine: ObservableObject {
     /// when its keyDown arrives; a key delivered some other way (e.g. posted
     /// by software) may never show up there, and must not end its mode early.
     private func recordTriggerVerifiability(_ keyCode: Int64) {
-        if Self.isKeyPhysicallyHeld(keyCode) {
+        let held = Self.isKeyPhysicallyHeld(keyCode)
+        if held {
             verifiableTriggerKeyCodes.insert(keyCode)
         } else {
             verifiableTriggerKeyCodes.remove(keyCode)
         }
+        Self.logger.notice(
+            "Trigger keyCode=\(keyCode, privacy: .public) heldInHIDState=\(held, privacy: .public) secureInput=\(IsSecureEventInputEnabled(), privacy: .public)"
+        )
+        startKeyUpWatchdog()
     }
 
-    /// Ends any active mode whose trigger key is no longer held even though
-    /// its keyUp never arrived.
-    private func endModesWhoseTriggerWasReleased() {
-        func released(_ keyCode: Int64) -> Bool {
-            verifiableTriggerKeyCodes.contains(keyCode) && !Self.isKeyPhysicallyHeld(keyCode)
+    /// Why the keyUp of a held key is taken as lost, or nil while it may
+    /// still come. Secure Input hides every key event from the tap, so
+    /// while it is on, only the HID key state can show that a key is
+    /// still held; a key that state cannot vouch for is let go.
+    private func lostKeyUpReason(_ keyCode: Int64, verifiable: Bool, eventsWereMissed: Bool) -> String? {
+        if verifiable {
+            return Self.isKeyPhysicallyHeld(keyCode) ? nil : "trigger no longer held, keyUp missed"
         }
-        if scrollActive, released(settings.scrollTriggerKeyCode) {
+        if IsSecureEventInputEnabled() {
+            return "Secure Input hides the keyUp"
+        }
+        return eventsWereMissed ? "event tap was disabled" : nil
+    }
+
+    /// Ends any active mode, and releases any layer button, whose key's
+    /// keyUp never reached the tap.
+    private func endModesWhoseKeyUpWasLost(eventsWereMissed: Bool = false) {
+        func lost(_ keyCode: Int64) -> String? {
+            lostKeyUpReason(keyCode, verifiable: verifiableTriggerKeyCodes.contains(keyCode), eventsWereMissed: eventsWereMissed)
+        }
+        if scrollActive, let reason = lost(settings.scrollTriggerKeyCode) {
             cancelFlickDetection()
             resetScrollVelocityTracking()
-            endScrollMode(reason: "trigger no longer held, keyUp missed")
+            endScrollMode(reason: reason)
         }
-        if zoomActive, released(settings.zoomTriggerKeyCode) {
-            endZoomMode(reason: "trigger no longer held, keyUp missed")
+        if zoomActive, let reason = lost(settings.zoomTriggerKeyCode) {
+            endZoomMode(reason: reason)
         }
-        if gestureActive, released(settings.gestureTriggerKeyCode) {
-            endGestureMode(reason: "trigger no longer held, keyUp missed")
+        if gestureActive, let reason = lost(settings.gestureTriggerKeyCode) {
+            endGestureMode(reason: reason)
         }
-        if let session = threeDSession, released(session.keyCode) {
-            endThreeDMode(reason: "trigger no longer held, keyUp missed")
+        if let session = threeDSession, let reason = lost(session.keyCode) {
+            endThreeDMode(reason: reason)
         }
+        for (keyCode, press) in layerPresses {
+            if let reason = lostKeyUpReason(keyCode, verifiable: press.isVerifiable, eventsWereMissed: eventsWereMissed) {
+                releaseLayerPress(keyCode: keyCode, reason: reason)
+            }
+        }
+        if lockedCursorPosition != nil, !pinsCursor {
+            reassociateCursor()
+            Self.logger.notice("Cursor was still pinned with no mode holding it; released.")
+        }
+    }
+
+    /// Whether an active mode keeps the cursor in place.
+    private var pinsCursor: Bool {
+        scrollActive || zoomActive || gestureActive || (threeDSession.map { !$0.isDrag } ?? false)
+    }
+
+    /// Checks for lost keyUps while a key is held, so a mode never outlives
+    /// its key even when the pointer is not moving.
+    private func startKeyUpWatchdog() {
+        guard keyUpWatchdogTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.endModesWhoseKeyUpWasLost()
+                if !(self.scrollActive || self.zoomActive || self.gestureActive || self.threeDSession != nil
+                    || !self.layerPresses.isEmpty || self.lockedCursorPosition != nil) {
+                    timer.invalidate()
+                    self.keyUpWatchdogTimer = nil
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        keyUpWatchdogTimer = timer
     }
 
     private func handleMouseMoved(event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -676,8 +734,8 @@ final class GestureEngine: ObservableObject {
                 dy: Int(event.getIntegerValueField(.mouseEventDeltaY))
             )
         }
-        if scrollActive || zoomActive || gestureActive || threeDSession != nil {
-            endModesWhoseTriggerWasReleased()
+        if scrollActive || zoomActive || gestureActive || threeDSession != nil || !layerPresses.isEmpty {
+            endModesWhoseKeyUpWasLost()
         }
         if let session = threeDSession {
             if session.isDrag {
@@ -1375,6 +1433,12 @@ final class GestureEngine: ObservableObject {
 
     private func noteAutoMouseMovement(dx: Int, dy: Int) {
         guard settings.isEnabled, settings.autoMouseEnabled, dx != 0 || dy != 0 else { return }
+        // Layer keys cannot reach the tap under Secure Input and would type,
+        // so the layer stays off rather than look on.
+        if isSecureInputOn() {
+            exitAutoMouseLayer(reason: "Secure Input on")
+            return
+        }
         if !autoMouseActive {
             let now = CFAbsoluteTimeGetCurrent()
             if now - lastAutoMouseMovementTime > Self.autoMouseEntryWindow {
@@ -1384,11 +1448,23 @@ final class GestureEngine: ObservableObject {
             autoMouseEntryMovement += abs(dx) + abs(dy)
             guard autoMouseEntryMovement >= Self.autoMouseEntryThreshold else { return }
             autoMouseActive = true
-            // Secure Input hides key events from the tap, so layer keys type.
-            Self.logger.notice("Auto mouse layer ON (secureInput=\(IsSecureEventInputEnabled(), privacy: .public)).")
+            Self.logger.notice("Auto mouse layer ON.")
         }
         scheduleAutoMouseExit()
     }
+
+    /// `IsSecureEventInputEnabled`, read at most every 0.2 s: pointer
+    /// movement reports arrive far more often than that.
+    private func isSecureInputOn() -> Bool {
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - secureInputCheckedAt > 0.2 {
+            secureInputCheckedAt = now
+            secureInputCached = IsSecureEventInputEnabled()
+        }
+        return secureInputCached
+    }
+    private var secureInputCheckedAt: CFAbsoluteTime = 0
+    private var secureInputCached = false
 
     private func scheduleAutoMouseExit() {
         autoMouseExitTimer?.invalidate()
@@ -1430,8 +1506,11 @@ final class GestureEngine: ObservableObject {
         }
         lastLayerClick = (button, now, position, count)
         layerPresses[keyCode] = LayerPress(
-            button: button, clickCount: count, modifierFlags: modifierFlags, pressedAt: now, position: position
+            button: button, clickCount: count,
+            isVerifiable: modifierFlags.isEmpty && Self.isKeyPhysicallyHeld(keyCode),
+            modifierFlags: modifierFlags, pressedAt: now, position: position
         )
+        startKeyUpWatchdog()
         postDragEvent(.down, button: button, at: position, clickCount: count, tap: Self.layerTap(for: button))
         Self.logger.notice(
             "Layer press DOWN key=\(keyCode, privacy: .public) button=\(button.rawValue, privacy: .public) count=\(count, privacy: .public) hold=\(!modifierFlags.isEmpty, privacy: .public) at=(\(Int(position.x), privacy: .public),\(Int(position.y), privacy: .public)) msSinceMove=\(Int((now - self.lastPointerMoveTime) * 1000), privacy: .public)"
