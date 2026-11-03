@@ -104,7 +104,7 @@ struct MenuBarContentView: View {
                 if isAccessibilityTrusted {
                     // The most confusing case: System Settings shows the
                     // switch ON, but the event tap still can't be created.
-                    // This happens when install.sh replaces the app bundle
+                    // This happens when a reinstall replaces the app bundle
                     // at the same path — the old TCC grant doesn't reliably
                     // carry over to the new binary on disk.
                     Text(
