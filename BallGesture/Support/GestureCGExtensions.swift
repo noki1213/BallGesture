@@ -5,14 +5,14 @@
 //  Synthesizes a real trackpad pinch/magnify (NSEventTypeGesture) CGEvent so the
 //  system and apps treat mouse movement as an actual pinch gesture, not a
 //  keyboard shortcut. This is a private/undocumented Core Graphics event type,
-//  so the field numbers below are ported
-//  from LinearMouse (MIT License, https://github.com/linearmouse/linearmouse),
-//  which in turn cites Apple/WebKit's internal SPI header:
+//  so the field numbers below are ported from LinearMouse (MIT License,
+//  https://github.com/linearmouse/linearmouse), which in turn cites
+//  Apple/WebKit's internal SPI header:
 //  https://github.com/WebKit/WebKit/blob/main/Tools/TestRunnerShared/spi/CoreGraphicsTestSPI.h
 //
 //  Because this relies on undocumented behavior, it may stop working on a
-//  future macOS release. GestureEngine falls back to Ctrl/Cmd+scroll if this
-//  does not produce visible zooming.
+//  future macOS release. Zoom Mode can instead send Ctrl+scroll or Cmd+scroll,
+//  selected by the user's zoom method setting.
 //
 
 import AppKit

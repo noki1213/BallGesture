@@ -869,18 +869,10 @@ final class GestureEngine: ObservableObject {
         return (dx, dy)
     }
 
-    /// Re-pins the cursor to the position captured when the mode started.
-    /// `CGWarpMouseCursorPosition` posts no events, so this cannot re-trigger
-    /// this same tap and cannot create a feedback loop.
-    ///
-    /// This warps UNCONDITIONALLY on every call rather than first comparing
-    /// `currentCursorPosition()` to `lockedCursorPosition` — on real hardware,
-    /// `CGEvent(source: nil)?.location` kept reporting the locked position
-    /// even while the on-screen cursor was visibly drifting, so that
-    /// "logical position" comparison is not trustworthy evidence of whether
-    /// a warp is needed. Called both from every mouseMoved (in case a
-    /// trackball's own driver moves the cursor without going through our
-    /// tap) via `startCursorPinTimer`'s ~60Hz timer.
+    /// Warps the cursor back to `lockedCursorPosition` while a mode is active.
+    /// Called on every mouseMoved the tap handles and from the ~60Hz timer
+    /// started by `startCursorPinTimer`; see `lockedCursorPosition` for why the
+    /// warp is unconditional.
     private func pinCursorIfNeeded(source: String) {
         guard let locked = lockedCursorPosition else { return }
         let before = currentCursorPosition()
