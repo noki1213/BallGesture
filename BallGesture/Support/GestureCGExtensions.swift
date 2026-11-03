@@ -5,7 +5,7 @@
 //  Synthesizes a real trackpad pinch/magnify (NSEventTypeGesture) CGEvent so the
 //  system and apps treat mouse movement as an actual pinch gesture, not a
 //  keyboard shortcut. This is a private/undocumented Core Graphics event type,
-//  so the field numbers below are NOT invented from memory: they are ported
+//  so the field numbers below are ported
 //  from LinearMouse (MIT License, https://github.com/linearmouse/linearmouse),
 //  which in turn cites Apple/WebKit's internal SPI header:
 //  https://github.com/WebKit/WebKit/blob/main/Tools/TestRunnerShared/spi/CoreGraphicsTestSPI.h

@@ -24,7 +24,7 @@ enum TapStatus: Equatable {
     case notStarted
     /// Tap creation failed (almost always: Accessibility permission not
     /// granted yet, or granted to a now-replaced app bundle after
-    /// install.sh's rm -rf + cp reinstall). Retrying on a timer.
+    /// a reinstall). Retrying on a timer.
     case retrying
     case running
 }
@@ -72,7 +72,7 @@ final class GestureEngine: ObservableObject {
     private var cursorPinTimer: Timer?
 
     /// Last cursor position observed while computing a mouseMoved delta.
-    /// Mac Mouse Fix (a third-party mouse utility the user runs) intercepts
+    /// Mac Mouse Fix (a third-party mouse utility) intercepts
     /// raw HID mouse input with its own event tap and re-synthesizes the
     /// mouseMoved events our tap receives. Two consequences: (1) it may keep
     /// moving the on-screen cursor via its own synthetic events regardless of
@@ -165,8 +165,7 @@ final class GestureEngine: ObservableObject {
 
     /// Maps `AppSettings.momentumStrength` (0...1, "looseness") to a decay
     /// half-life in seconds, then to a per-tick multiplicative decay factor.
-    /// This is the "decay rate as an adjustable constant" the feature asked
-    /// for: the 0.15s...1.5s half-life range below is the constant to tune.
+    /// The 0.15s...1.5s half-life range below is the constant to tune.
     private static func momentumDecayFactorPerTick(strength: Double) -> Double {
         let clamped = min(max(strength, 0), 1)
         let halfLifeSeconds = 0.15 + clamped * 1.35
@@ -257,7 +256,7 @@ final class GestureEngine: ObservableObject {
 
     /// Attempts to create the event tap. If it fails (almost always because
     /// the Accessibility permission has not been granted yet, or was granted
-    /// to a previous build of the app bundle before install.sh replaced it),
+    /// to a previous build of the app bundle before a reinstall replaced it),
     /// this schedules a retry every 2 seconds so the app starts working as
     /// soon as permission is granted, with no relaunch required.
     func start() {
@@ -951,8 +950,8 @@ final class GestureEngine: ObservableObject {
     }
 
     /// Updates the exponential moving average of scroll speed (px/s) used
-    /// as momentum's starting velocity if the trigger key is released while
-    /// still moving. `scrollX`/`scrollY` are in the same already-sensitivity/
+    /// as momentum's starting velocity when a flick is detected.
+    /// `scrollX`/`scrollY` are in the same already-sensitivity/
     /// direction-adjusted units posted to real scroll events.
     private func updateScrollVelocity(scrollX: Double, scrollY: Double) {
         let now = CFAbsoluteTimeGetCurrent()

@@ -32,7 +32,7 @@ enum AccessibilityPermission {
 
     /// The Accessibility toggle in System Settings can appear ON while the
     /// underlying TCC grant is actually stale — this happens when
-    /// install.sh's `rm -rf` + `cp` reinstall replaces the app bundle at the
+    /// a reinstall (`rm -rf` + `cp`) replaces the app bundle at the
     /// same path: macOS sometimes keeps showing the old switch state without
     /// the grant actually applying to the new binary on disk. Removing the
     /// entry and re-adding it from System Settings doesn't always clear this
