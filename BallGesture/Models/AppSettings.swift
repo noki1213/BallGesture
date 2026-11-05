@@ -423,7 +423,7 @@ final class AppSettings: ObservableObject {
             (.zoomTrigger, zoomTriggerKeyCode, "Zoom Mode"),
             (.gestureTrigger, gestureTriggerKeyCode, "Gesture Mode")
         ] + ThreeDAction.allCases.map {
-            (.threeDTrigger($0), threeDTriggerKeyCode(for: $0), "3D \($0.displayName)")
+            (.threeDTrigger($0), threeDTriggerKeyCode(for: $0), "CAD \($0.displayName)")
         } + AutoMouseButton.allCases.map {
             (.autoMouseButton($0), autoMouseKeyCode(for: $0), $0.displayName)
         } + AutoMouseButton.allCases.compactMap { button in
