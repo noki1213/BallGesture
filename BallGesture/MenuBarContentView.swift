@@ -21,7 +21,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .scroll: return "Scroll"
         case .zoom: return "Zoom"
         case .gesture: return "Gesture"
-        case .threeD: return "3D"
+        case .threeD: return "CAD"
         case .mouse: return "Mouse"
         }
     }

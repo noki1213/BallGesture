@@ -87,7 +87,7 @@ Left and right send the standard back/forward shortcut, so what they do depends 
 
 **The Down gesture needs one-time setup.** It sends `Cmd + Option + Ctrl + D` rather than F11, because F11 is frequently intercepted by macOS or by remapping tools. Assign that combination yourself under System Settings → Keyboard → Keyboard Shortcuts → Mission Control → Show Desktop. Without that assignment, the Down gesture does nothing.
 
-### 3D Mode — hold F18 / F19 / F20
+### CAD Mode — hold F18 / F19 / F20
 
 Three keys move the view in 3D apps such as CAD tools, slicers, and WebGL viewers in a browser:
 
@@ -101,7 +101,7 @@ The defaults follow the common 3D mouse layout used by Bambu Studio, PrusaSlicer
 
 Each action can send any of these: Left Drag, Right Drag, Middle Drag, Shift + Middle Drag, Scroll, Shift + Scroll, Pinch, or Wheel. Zoom uses vertical movement only; moving up zooms in. Each action also has its own **Reverse** switch, independent of the scroll direction setting.
 
-Apps that navigate differently get their own settings. The 3D Mode section lists them under **Apps**, with **All Other Apps** first; click one to show and edit its keys below the list, and use **Add App…** to add another. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
+Apps that navigate differently get their own settings. The CAD Mode section lists them under **Apps**, with **All Other Apps** first; click one to show and edit its keys below the list, and use **Add App…** to add another. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
 
 | Action | Output |
 | --- | --- |
@@ -129,12 +129,12 @@ Keyboards with home row mods send a modifier instead of the letter while J, K or
 
 ## Settings
 
-Click the menu bar icon to open the settings popover. Settings are grouped in tabs by mode — Scroll, Zoom, Gesture, 3D and Mouse — and each tab holds that mode's trigger keys.
+Click the menu bar icon to open the settings popover. Settings are grouped in tabs by mode — Scroll, Zoom, Gesture, CAD and Mouse — and each tab holds that mode's trigger keys.
 
 | Setting | Default | Range |
 | --- | --- | --- |
 | Enabled | On | — |
-| Trigger keys | F15 / F16 / F17, 3D: F18 / F19 / F20 | Any key; a key already in use cannot be reused |
+| Trigger keys | F15 / F16 / F17, CAD: F18 / F19 / F20 | Any key; a key already in use cannot be reused |
 | Scroll sensitivity | 1.0 | 0.1 – 5.0 |
 | Natural scroll direction | On | — |
 | Momentum scrolling | On | — |
@@ -142,8 +142,8 @@ Click the menu bar icon to open the settings popover. Settings are grouped in ta
 | Zoom sensitivity | 1.0 | 0.1 – 5.0 |
 | Zoom method | Pinch Gesture | Pinch / Ctrl+Scroll / Cmd+Scroll |
 | Gesture distance | 50 px | 10 – 200 px |
-| 3D output and Reverse | Pan: Right Drag, Zoom: Wheel, Rotate: Left Drag | Per action, for all apps or per app |
-| 3D sensitivity | 1.0 | 0.1 – 5.0 |
+| CAD output and Reverse | Pan: Right Drag, Zoom: Wheel, Rotate: Left Drag | Per action, for all apps or per app |
+| CAD sensitivity | 1.0 | 0.1 – 5.0 |
 | Auto Mouse Layer | Off | — |
 | Auto Mouse Layer device | Any Pointer | Any Pointer or one connected device |
 | Auto Mouse Layer keys | Left: J, Right: K, Middle: L | Any key; a key already in use cannot be reused |
@@ -287,7 +287,7 @@ Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開�
 
 **下方向だけは最初に設定が必要です。** F11 ではなく `Cmd + Option + Ctrl + D` を送っています。F11 は macOS 自体やキー変更ツールに横取りされることが多いためです。システム設定 → キーボード → キーボードショートカット → Mission Control → デスクトップを表示 に、この組み合わせを自分で割り当ててください。割り当てていない場合、下方向のジェスチャーは何も起こりません。
 
-### 3D Mode — F18 / F19 / F20 を押しながら
+### CAD Mode — F18 / F19 / F20 を押しながら
 
 CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面の視点を3つのキーで動かします。
 
@@ -301,7 +301,7 @@ CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面�
 
 各操作で送るものは Left Drag・Right Drag・Middle Drag・Shift + Middle Drag・Scroll・Shift + Scroll・Pinch・Wheel から選べます。ズームは上下の動きだけを使い、上に動かすと拡大します。操作ごとに **Reverse**（向きを逆にする）があり、スクロールの向きの設定とは別に効きます。
 
-操作が違うアプリには専用の設定を作れます。3D Mode の **Apps** に、先頭の **All Other Apps**（ほかのすべてのアプリ）と、専用の設定があるアプリが並びます。アプリを押すと、その下にそのアプリのキーの設定が出ます。アプリを足すときは **Add App…** を使います。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
+操作が違うアプリには専用の設定を作れます。CAD Mode の **Apps** に、先頭の **All Other Apps**（ほかのすべてのアプリ）と、専用の設定があるアプリが並びます。アプリを押すと、その下にそのアプリのキーの設定が出ます。アプリを足すときは **Add App…** を使います。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
 
 | 操作 | 送るもの |
 | --- | --- |
@@ -329,12 +329,12 @@ Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate
 
 ## 設定項目
 
-メニューバーのアイコンをクリックすると設定画面が開きます。設定はモードごとのタブ（Scroll・Zoom・Gesture・3D・Mouse）に分かれていて、トリガーキーもそれぞれのタブにあります。
+メニューバーのアイコンをクリックすると設定画面が開きます。設定はモードごとのタブ（Scroll・Zoom・Gesture・CAD・Mouse）に分かれていて、トリガーキーもそれぞれのタブにあります。
 
 | 設定 | 初期値 | 範囲 |
 | --- | --- | --- |
 | Enabled | オン | — |
-| トリガーキー | F15 / F16 / F17、3D は F18 / F19 / F20 | 任意のキー。他のモードで使用中のキーは選択不可 |
+| トリガーキー | F15 / F16 / F17、CAD は F18 / F19 / F20 | 任意のキー。他のモードで使用中のキーは選択不可 |
 | スクロール感度 | 1.0 | 0.1 – 5.0 |
 | ナチュラルスクロール方向 | オン | — |
 | 慣性スクロール | オン | — |
@@ -342,8 +342,8 @@ Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate
 | ズーム感度 | 1.0 | 0.1 – 5.0 |
 | ズーム方式 | Pinch Gesture | Pinch / Ctrl+Scroll / Cmd+Scroll |
 | ジェスチャー距離 | 50 px | 10 – 200 px |
-| 3D の送るもの・Reverse | Pan: Right Drag、Zoom: Wheel、Rotate: Left Drag | 操作ごと。全アプリ共通かアプリごと |
-| 3D の感度 | 1.0 | 0.1 – 5.0 |
+| CAD の送るもの・Reverse | Pan: Right Drag、Zoom: Wheel、Rotate: Left Drag | 操作ごと。全アプリ共通かアプリごと |
+| CAD の感度 | 1.0 | 0.1 – 5.0 |
 | Auto Mouse Layer | オフ | — |
 | Auto Mouse Layer の機器 | Any Pointer | Any Pointer か、つながっている1台 |
 | Auto Mouse Layer のキー | 左: J、右: K、中: L | 任意のキー。他で使用中のキーは選択不可 |
