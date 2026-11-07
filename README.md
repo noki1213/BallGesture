@@ -111,6 +111,8 @@ Apps that navigate differently get their own settings. The CAD Mode section list
 
 With Fusion's mouse navigation instead, use Middle Drag for Pan and Shift + Middle Drag for Rotate.
 
+Some apps pan on Shift + two-finger trackpad scroll with a fixed direction, so the view moves against your fingers whatever the natural scrolling setting says; Bambu Studio is one. Select the app under **Apps** and turn on **Reverse Shift + Trackpad Scroll** to flip that gesture while the app is frontmost. The switch is off by default and exists per app, not for All Other Apps. It only affects a real trackpad's scrolling with Shift held: mouse wheels, pinches, drags, and the scrolls BallGesture itself sends stay as they are.
+
 ### Auto Mouse Layer — move the ball, then press J / K / L
 
 For a trackball and a keyboard that are separate devices, the way keyboard firmware such as QMK or ZMK switches to a mouse layer while the ball moves. Turn on **Auto Mouse Layer** in the menu. Once the pointer moves, these keys click at the pointer instead of typing:
@@ -144,6 +146,7 @@ Click the menu bar icon to open the settings popover. Settings are grouped in ta
 | Gesture distance | 50 px | 10 – 200 px |
 | CAD output and Reverse | Pan: Right Drag, Zoom: Wheel, Rotate: Left Drag | Per action, for all apps or per app |
 | CAD sensitivity | 1.0 | 0.1 – 5.0 |
+| Reverse Shift + Trackpad Scroll | Off | Per app |
 | Auto Mouse Layer | Off | — |
 | Auto Mouse Layer device | Any Pointer | Any Pointer or one connected device |
 | Auto Mouse Layer keys | Left: J, Right: K, Middle: L | Any key; a key already in use cannot be reused |
@@ -311,6 +314,8 @@ CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面�
 
 Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate を Shift + Middle Drag にします。
 
+Shift を押しながらのトラックパッドの2本指スクロールで、向きを固定してパンするアプリがあります（Bambu Studio など）。ナチュラルスクロールの設定にかかわらず、視点が指と逆に動きます。**Apps** でそのアプリを選んで **Reverse Shift + Trackpad Scroll** をオンにすると、そのアプリが最前面の間だけこの操作の向きが逆になります。初期値はオフで、アプリごとの設定です（All Other Apps にはありません）。変わるのは Shift を押しながらの実際のトラックパッドのスクロールだけで、マウスホイール・ピンチ・ドラッグ・BallGesture 自身が送るスクロールはそのままです。
+
 ### Auto Mouse Layer — ボールを動かしてから J / K / L
 
 トラックボールとキーボードが別々の機器でも、QMK や ZMK などのキーボードのファームウェアが持つ「ボールを動かしている間だけマウスレイヤーに切り替わる」動きを使えます。メニューで **Auto Mouse Layer** をオンにします。ポインタが動くと、次のキーが文字の代わりにポインタの位置でクリックします。
@@ -344,6 +349,7 @@ Fusion をマウス向けの操作で使うなら、Pan を Middle Drag、Rotate
 | ジェスチャー距離 | 50 px | 10 – 200 px |
 | CAD の送るもの・Reverse | Pan: Right Drag、Zoom: Wheel、Rotate: Left Drag | 操作ごと。全アプリ共通かアプリごと |
 | CAD の感度 | 1.0 | 0.1 – 5.0 |
+| Reverse Shift + Trackpad Scroll | オフ | アプリごと |
 | Auto Mouse Layer | オフ | — |
 | Auto Mouse Layer の機器 | Any Pointer | Any Pointer か、つながっている1台 |
 | Auto Mouse Layer のキー | 左: J、右: K、中: L | 任意のキー。他で使用中のキーは選択不可 |

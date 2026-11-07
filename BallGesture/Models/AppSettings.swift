@@ -111,8 +111,22 @@ struct ThreeDProfile: Codable, Equatable {
 struct ThreeDAppProfile: Codable, Equatable, Identifiable {
     var bundleID: String
     var profile: ThreeDProfile
+    /// Flips Shift + trackpad scrolling in this app, for apps that pan on
+    /// that gesture with a fixed sign and so ignore natural scrolling.
+    var reversesShiftTrackpadScroll = false
 
     var id: String { bundleID }
+}
+
+extension ThreeDAppProfile {
+    /// A saved entry without the switch still decodes; one failed entry
+    /// would otherwise discard the whole saved list.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bundleID = try container.decode(String.self, forKey: .bundleID)
+        profile = try container.decode(ThreeDProfile.self, forKey: .profile)
+        reversesShiftTrackpadScroll = try container.decodeIfPresent(Bool.self, forKey: .reversesShiftTrackpadScroll) ?? false
+    }
 }
 
 /// A mouse button that a key turns into while the auto mouse layer is on.

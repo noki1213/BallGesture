@@ -6,7 +6,8 @@
 //  into scroll events (Scroll Mode), pinch/zoom events (Zoom Mode), system
 //  gestures (Gesture Mode), or the drags, scrolls and pinches a 3D view uses
 //  to pan, zoom and rotate (3D Mode). While the pointer moves, chosen keys
-//  also click like mouse buttons (the auto mouse layer).
+//  also click like mouse buttons (the auto mouse layer). Shift + trackpad
+//  scrolling can also be flipped per app.
 //
 
 import AppKit
@@ -110,6 +111,13 @@ final class GestureEngine: ObservableObject {
         var wheelRemainder = 0.0
     }
     private var threeDSession: ThreeDSession?
+    /// Apps whose Shift + trackpad scrolling is flipped, kept apart from the
+    /// settings so the tap can skip every scroll event while this is empty.
+    private var shiftScrollReversedBundleIDs: Set<String> = []
+    /// Tags every scroll this app posts. Posted scrolls come back through the
+    /// tap looking like a trackpad's, including momentum that outlives the
+    /// key press, so neither their fields nor the active mode can identify them.
+    private static let ownScrollMarker: Int64 = 0x42475343
     /// Pointer movement (px, after sensitivity) per wheel notch in 3D Mode.
     private static let threeDWheelStep = 8.0
 
@@ -250,6 +258,13 @@ final class GestureEngine: ObservableObject {
                 self?.updatePointingMonitor(enabled: enabled, device: device)
             }
             .store(in: &cancellables)
+        settings.$threeDAppProfiles
+            .sink { [weak self] profiles in
+                self?.shiftScrollReversedBundleIDs = Set(
+                    profiles.filter(\.reversesShiftTrackpadScroll).map(\.bundleID)
+                )
+            }
+            .store(in: &cancellables)
     }
 
     var isRunning: Bool { eventTap != nil }
@@ -276,7 +291,8 @@ final class GestureEngine: ObservableObject {
             (1 << CGEventType.leftMouseDown.rawValue) |
             (1 << CGEventType.rightMouseDown.rawValue) |
             (1 << CGEventType.leftMouseUp.rawValue) |
-            (1 << CGEventType.rightMouseUp.rawValue)
+            (1 << CGEventType.rightMouseUp.rawValue) |
+            (1 << CGEventType.scrollWheel.rawValue)
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
@@ -452,9 +468,28 @@ final class GestureEngine: ObservableObject {
                 stopMomentum(reason: "\(typeName) mouse click")
             }
             return Unmanaged.passRetained(event)
+        case .scrollWheel:
+            reverseShiftScrollIfNeeded(event: event)
+            return Unmanaged.passRetained(event)
         default:
             return Unmanaged.passRetained(event)
         }
+    }
+
+    /// Flips a trackpad scroll made with Shift held when the frontmost app
+    /// has asked for it. Every scroll on the system passes through here, so
+    /// the frontmost app is looked up last. Mouse wheels are not continuous
+    /// and stay as they are.
+    private func reverseShiftScrollIfNeeded(event: CGEvent) {
+        guard !shiftScrollReversedBundleIDs.isEmpty,
+              settings.isEnabled,
+              event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0,
+              event.flags.contains(.maskShift),
+              event.getIntegerValueField(.eventSourceUserData) != Self.ownScrollMarker,
+              let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              shiftScrollReversedBundleIDs.contains(bundleID)
+        else { return }
+        event.negateScrollAxes()
     }
 
     /// Logs every left and right press and release, whether from the
@@ -938,7 +973,26 @@ final class GestureEngine: ObservableObject {
 
     /// A two-axis scroll event measured in pixels, the kind a trackpad sends.
     private static func pixelScrollEvent(x: Int32, y: Int32) -> CGEvent? {
-        CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: y, wheel2: x, wheel3: 0)
+        ownScrollEvent(units: .pixel, wheelCount: 2, wheel1: y, wheel2: x)
+    }
+
+    /// Every scroll this app posts is made here, so all of them carry the marker.
+    private static func ownScrollEvent(
+        units: CGScrollEventUnit,
+        wheelCount: UInt32,
+        wheel1: Int32,
+        wheel2: Int32 = 0
+    ) -> CGEvent? {
+        let event = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: units,
+            wheelCount: wheelCount,
+            wheel1: wheel1,
+            wheel2: wheel2,
+            wheel3: 0
+        )
+        event?.setIntegerValueField(.eventSourceUserData, value: ownScrollMarker)
+        return event
     }
 
     /// Updates the exponential moving average of scroll speed (px/s) used
@@ -1061,14 +1115,8 @@ final class GestureEngine: ObservableObject {
         let scrollAmount = Int32((-deltaY * settings.zoomSensitivity).rounded())
         guard scrollAmount != 0 else { return }
 
-        guard let scrollEvent = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .pixel,
-            wheelCount: 1,
-            wheel1: scrollAmount,
-            wheel2: 0,
-            wheel3: 0
-        ) else { return }
+        guard let scrollEvent = Self.ownScrollEvent(units: .pixel, wheelCount: 1, wheel1: scrollAmount)
+        else { return }
 
         scrollEvent.flags = settings.zoomMethod == .cmdScroll ? .maskCommand : .maskControl
         scrollEvent.post(tap: .cghidEventTap)
@@ -1163,7 +1211,7 @@ final class GestureEngine: ObservableObject {
             let notches = Int32(session.wheelRemainder.rounded(.towardZero))
             if notches != 0 {
                 session.wheelRemainder -= Double(notches)
-                CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: notches, wheel2: 0, wheel3: 0)?
+                Self.ownScrollEvent(units: .line, wheelCount: 1, wheel1: notches)?
                     .post(tap: .cgSessionEventTap)
             }
         default:

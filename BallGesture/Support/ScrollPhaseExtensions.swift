@@ -55,4 +55,24 @@ extension CGEvent {
         setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentumPhase?.rawValue ?? MomentumScrollPhase.none.rawValue)
         setIntegerValueField(scrollWheelEventIsContinuousField, value: 1)
     }
+
+    /// Negates both scroll axes. An event carries each axis at three
+    /// precisions, and apps read different ones, so all of them must agree.
+    /// Writing the line delta also overwrites the other two with values
+    /// derived from it, which loses their precision, so every value is read
+    /// first and the line delta is written first.
+    func negateScrollAxes() {
+        let axes: [(line: CGEventField, point: CGEventField, fixedPoint: CGEventField)] = [
+            (.scrollWheelEventDeltaAxis1, .scrollWheelEventPointDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis1),
+            (.scrollWheelEventDeltaAxis2, .scrollWheelEventPointDeltaAxis2, .scrollWheelEventFixedPtDeltaAxis2)
+        ]
+        for axis in axes {
+            let line = getIntegerValueField(axis.line)
+            let point = getDoubleValueField(axis.point)
+            let fixedPoint = getDoubleValueField(axis.fixedPoint)
+            setIntegerValueField(axis.line, value: -line)
+            setDoubleValueField(axis.point, value: -point)
+            setDoubleValueField(axis.fixedPoint, value: -fixedPoint)
+        }
+    }
 }
