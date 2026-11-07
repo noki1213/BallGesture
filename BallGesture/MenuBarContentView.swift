@@ -269,6 +269,9 @@ struct MenuBarContentView: View {
                     Toggle("Reverse", isOn: reversedBinding(for: action))
                 }
             }
+            if let reversesShiftScroll = reversesShiftScrollBinding {
+                Toggle("Reverse Shift + Trackpad Scroll", isOn: reversesShiftScroll)
+            }
             sensitivitySlider(title: "Sensitivity (all apps)", value: $settings.threeDSensitivity)
         }
     }
@@ -349,6 +352,22 @@ struct MenuBarContentView: View {
         return Binding(
             get: { profile.wrappedValue[action].reversed },
             set: { profile.wrappedValue[action].reversed = $0 }
+        )
+    }
+
+    /// The selected app's switch; nil while All Other Apps is selected,
+    /// because the switch belongs to one app, never to the default set.
+    private var reversesShiftScrollBinding: Binding<Bool>? {
+        let bundleID = selectedThreeDApp
+        guard settings.threeDAppProfiles.contains(where: { $0.bundleID == bundleID }) else { return nil }
+        let settings = settings
+        return Binding(
+            get: { settings.threeDAppProfiles.first { $0.bundleID == bundleID }?.reversesShiftTrackpadScroll ?? false },
+            set: { newValue in
+                if let index = settings.threeDAppProfiles.firstIndex(where: { $0.bundleID == bundleID }) {
+                    settings.threeDAppProfiles[index].reversesShiftTrackpadScroll = newValue
+                }
+            }
         )
     }
 
