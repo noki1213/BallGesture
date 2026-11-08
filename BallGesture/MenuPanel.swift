@@ -136,8 +136,16 @@ final class MenuPanelController {
     }
 
     private func layout() {
-        let fitting = hostingView.fittingSize
-        let measured = fitting.width > 0 && fitting.height > 0 ? fitting : contentSize
+        var measured = contentSize
+        if measured.width <= 0 || measured.height <= 0 {
+            // The hosting view reports no fitting size (its sizing options are off), and the content
+            // only reports its own size once it is laid out in a window of real size. Until then,
+            // measure a copy of the view so the panel opens at a real size; the content's own report
+            // then corrects the height for the tab actually shown.
+            let unbounded = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            measured = NSHostingController(rootView: MenuPanelView(state: state, onSizeChange: { _ in }))
+                .sizeThatFits(in: unbounded)
+        }
         let size = NSSize(width: ceil(measured.width), height: ceil(measured.height))
         guard size.width > 0, size.height > 0 else { return }
         let anchor = statusItemFrame
