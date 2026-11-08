@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private var statusItem: NSStatusItem?
-    private var popover: NSPopover?
+    private let menuPanel = MenuPanelController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Belt-and-suspenders alongside INFOPLIST_KEY_LSUIElement: keep the
@@ -92,25 +92,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "BallGesture")
-            button.action = #selector(togglePopover)
+            button.action = #selector(togglePanel)
             button.target = self
         }
         statusItem = item
 
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: MenuBarContentView())
-        self.popover = popover
+        menuPanel.onVisibilityChanged = { [weak self] visible in
+            self?.statusItem?.button?.highlight(visible)
+        }
     }
 
-    @objc private func togglePopover() {
-        guard let button = statusItem?.button, let popover else { return }
+    @objc private func togglePanel() {
+        guard let button = statusItem?.button, let window = button.window else { return }
 
-        if popover.isShown {
-            popover.performClose(nil)
+        if menuPanel.isVisible {
+            menuPanel.hide()
         } else {
-            NSApp.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            menuPanel.show(below: window.convertToScreen(button.convert(button.bounds, to: nil)))
         }
     }
 }
@@ -120,7 +118,7 @@ struct BallGestureApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // No visible scene: the UI is entirely the status item + popover set
+        // No visible scene: the UI is entirely the status item + panel set
         // up by AppDelegate. `Settings` is the standard trick for an
         // otherwise scene-less SwiftUI App lifecycle app.
         Settings {
