@@ -432,6 +432,15 @@ struct MenuBarContentView: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.prompt = "Add"
+        // The menu panel floats at menu level; drop it to normal for the
+        // dialog so the chooser opens above it, then restore it.
+        let hostWindow = NSApp.keyWindow
+        let hostLevel = hostWindow?.level
+        hostWindow?.level = .normal
+        defer {
+            if let hostLevel { hostWindow?.level = hostLevel }
+            if hostWindow?.isVisible == true { hostWindow?.makeKeyAndOrderFront(nil) }
+        }
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK else { return }
 

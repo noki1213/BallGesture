@@ -131,7 +131,7 @@ Keyboards with home row mods send a modifier instead of the letter while J, K or
 
 ## Settings
 
-Click the menu bar icon to open the settings popover. Settings are grouped in tabs by mode — Scroll, Zoom, Gesture, CAD and Mouse — and each tab holds that mode's trigger keys.
+Click the menu bar icon to open the settings panel. Settings are grouped in tabs by mode — Scroll, Zoom, Gesture, CAD and Mouse — and each tab holds that mode's trigger keys.
 
 | Setting | Default | Range |
 | --- | --- | --- |
@@ -153,7 +153,7 @@ Click the menu bar icon to open the settings popover. Settings are grouped in ta
 | Auto Mouse Layer hold keys | None | Any key, including modifiers |
 | Auto Mouse Layer time | 700 ms | 200 – 2000 ms |
 
-The popover also shows live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
+The panel also shows live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
 
 Settings are stored in `~/Library/Preferences/com.noki.BallGesture.plist`.
 
@@ -187,7 +187,7 @@ The source is here in full, so you can verify all of this rather than take my wo
 tccutil reset Accessibility com.noki.BallGesture
 ```
 
-Then re-enable BallGesture in System Settings and restart it. The menu bar popover has a **Copy 'Reset Permission' Command** button that copies this line for you.
+Then re-enable BallGesture in System Settings and restart it. The menu bar panel has a **Copy 'Reset Permission' Command** button that copies this line for you.
 
 **Working out what is happening.** BallGesture logs trigger key presses, mode transitions, and event tap creation:
 
