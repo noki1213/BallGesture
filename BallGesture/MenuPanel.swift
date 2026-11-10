@@ -154,7 +154,10 @@ final class MenuPanelController {
         let visible = screen?.visibleFrame ?? anchor
         var x = anchor.midX - size.width / 2
         x = min(max(x, visible.minX + 8 - margin), visible.maxX - 8 + margin - size.width)
-        let y = anchor.minY - 6 + margin - size.height
+        // The status item's button is shorter than a notched display's menu bar, so its bottom edge
+        // sits inside the bar; the menu bar's own bottom edge keeps the sheet clear of it.
+        let top = min(anchor.minY, visible.maxY) - 6
+        let y = top + margin - size.height
         let anchorX = min(max((anchor.midX - x) / size.width, 0), 1)
         if state.materializeAnchorX != anchorX { state.materializeAnchorX = anchorX }
         let frame = NSRect(x: x, y: y, width: size.width, height: size.height)
