@@ -33,8 +33,7 @@ struct MenuBarContentView: View {
                 Spacer()
                 Toggle("", isOn: $settings.isEnabled)
                     .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+                    .toggleStyle(.glassSwitch)
             }
             .padding(.horizontal, 10)
             .frame(height: 36)

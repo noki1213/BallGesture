@@ -290,16 +290,12 @@ struct CADSettingsPage: View {
                 .foregroundStyle(isSelected ? Palette.brightWhite : Palette.white)
             Spacer()
             if !bundleID.isEmpty {
-                Button {
-                    removeApp(bundleID)
-                } label: {
-                    Image(systemName: "minus.circle")
-                        .foregroundStyle(Palette.dimWhite)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Remove")
+                Image(systemName: "minus.circle")
+                    .foregroundStyle(Palette.dimWhite)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+                    .onTapGesture { removeApp(bundleID) }
+                    .help("Remove")
             }
         }
         .padding(.horizontal, 9)
@@ -340,8 +336,7 @@ struct CADSettingsPage: View {
                         set: { selectedProfile.wrappedValue[action].reversed = $0 }
                     ))
                     .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
+                    .toggleStyle(.smallGlassSwitch)
                 }
             }
         }
