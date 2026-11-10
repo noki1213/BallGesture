@@ -19,11 +19,6 @@ final class MenuPanelState: ObservableObject {
     @Published var materializeAnchorX: CGFloat = 0.5
 }
 
-private struct PanelSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
-}
-
 struct MenuPanelView: View {
     @ObservedObject var state: MenuPanelState
     let onSizeChange: (CGSize) -> Void
@@ -49,10 +44,7 @@ struct MenuPanelView: View {
             .opacity(Double(state.materializeProgress))
             .padding(Self.margin)
             .fixedSize()
-            .background(GeometryReader { proxy in
-                Color.clear.preference(key: PanelSizeKey.self, value: proxy.size)
-            })
-            .onPreferenceChange(PanelSizeKey.self) { onSizeChange($0) }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { onSizeChange($0) }
     }
 }
 
@@ -154,10 +146,7 @@ final class MenuPanelController {
         let visible = screen?.visibleFrame ?? anchor
         var x = anchor.midX - size.width / 2
         x = min(max(x, visible.minX + 8 - margin), visible.maxX - 8 + margin - size.width)
-        // The status item's button is shorter than a notched display's menu bar, so its bottom edge
-        // sits inside the bar; the menu bar's own bottom edge keeps the sheet clear of it.
-        let top = min(anchor.minY, visible.maxY) - 6
-        let y = top + margin - size.height
+        let y = anchor.minY - 6 + margin - size.height
         let anchorX = min(max((anchor.midX - x) / size.width, 0), 1)
         if state.materializeAnchorX != anchorX { state.materializeAnchorX = anchorX }
         let frame = NSRect(x: x, y: y, width: size.width, height: size.height)
