@@ -10,9 +10,22 @@
 		008931B62FF8F3E000AA0FB5 /* BallGesture.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BallGesture.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		008931D02FF8F3E100AA0FB5 /* Exceptions for "BallGesture" folder in "BallGesture" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 008931B52FF8F3E000AA0FB5 /* BallGesture */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		008931B82FF8F3E000AA0FB5 /* BallGesture */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				008931D02FF8F3E100AA0FB5 /* Exceptions for "BallGesture" folder in "BallGesture" target */,
+			);
 			path = BallGesture;
 			sourceTree = "<group>";
 		};
@@ -259,6 +272,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BallGesture/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -292,6 +306,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BallGesture/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (

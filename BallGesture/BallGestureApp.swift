@@ -84,6 +84,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Opening the app again while it runs, from Finder or Spotlight, opens its window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Task { @MainActor in SettingsWindowController.shared.show() }
+        return false
+    }
+
+    /// ballgesture://settings opens the settings window; ballgesture://settings/<page> opens a page
+    /// (general, scroll, zoom, gesture, cad, mouse-layer).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme?.lowercased() == "ballgesture" {
+            guard url.host?.lowercased() == "settings" else {
+                Self.logger.notice("Ignoring unknown URL \(url.absoluteString, privacy: .public).")
+                continue
+            }
+            let page = url.pathComponents.dropFirst().first.flatMap(SettingsPage.init(urlName:))
+            Task { @MainActor in
+                self.menuPanel.hide()
+                SettingsWindowController.shared.show(page: page)
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         GestureEngine.shared.endActiveModesIfNeeded()
     }
@@ -118,11 +140,20 @@ struct BallGestureApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // No visible scene: the UI is entirely the status item + panel set
-        // up by AppDelegate. `Settings` is the standard trick for an
-        // otherwise scene-less SwiftUI App lifecycle app.
+        // The status item, its panel and the settings window are AppKit, set
+        // up by AppDelegate. An empty `Settings` scene gives the SwiftUI App
+        // lifecycle a scene without opening a window of its own, and its
+        // menu item is pointed at the settings window instead.
         Settings {
             EmptyView()
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    SettingsWindowController.shared.show()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }
