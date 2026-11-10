@@ -107,8 +107,7 @@ struct ToggleRow: View {
         SettingsRow(title: title, subtitle: subtitle) {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+                .toggleStyle(.glassSwitch)
         }
     }
 }
@@ -131,14 +130,7 @@ struct SliderRow: View {
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundStyle(Palette.dimWhite)
             }
-            Group {
-                if let step {
-                    Slider(value: $value, in: range, step: step)
-                } else {
-                    Slider(value: $value, in: range)
-                }
-            }
-            .controlSize(.small)
+            GlassSlider(value: $value, range: range, step: step)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -158,15 +150,14 @@ struct TextButton: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(color.opacity(isHovered ? 1 : 0.85))
-                .underline(isHovered, color: color.opacity(0.5))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        Text(title)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(color.opacity(isHovered ? 1 : 0.85))
+            .underline(isHovered, color: color.opacity(0.5))
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
+            .onTapGesture(perform: action)
+            .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -247,14 +238,12 @@ struct KeyRow: View {
             SettingsRow(title: title, subtitle: subtitle) {
                 HStack(spacing: 8) {
                     if let onClear, settings.captureTarget != target {
-                        Button(action: onClear) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Palette.dimWhite)
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Remove")
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Palette.dimWhite)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: onClear)
+                            .help("Remove")
                     }
                     KeyRecorderButton(target: target, keyName: keyName)
                 }

@@ -29,12 +29,14 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 640, maxWidth: .infinity, minHeight: 460, maxHeight: .infinity)
-        .background(GlassBackground(shape: Rectangle()))
+        .background(SteadyGlassBackground())
         .overlay { DropdownLayer(model: model) }
         .coordinateSpace(name: DropdownSpace.name)
         .environmentObject(model)
         .foregroundStyle(Palette.white)
         .tint(Palette.green)
+        // Anything still drawn by the system keeps its in-front look when the window is behind.
+        .environment(\.controlActiveState, .key)
         .ignoresSafeArea()
     }
 

@@ -51,6 +51,17 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
+/// Frosted blur under the dark tint, held in its active state so the window looks the same in
+/// front and behind. Liquid Glass and the default material both change when a window loses focus.
+struct SteadyGlassBackground: View {
+    var body: some View {
+        ZStack {
+            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+            Palette.black.opacity(0.60)
+        }
+    }
+}
+
 /// Liquid Glass tinted dark where the system has it, frosted blur under the same tint before that.
 /// The tint fixes how bright the ground is, so light text stays readable over any window behind.
 struct GlassBackground<S: Shape>: View {
