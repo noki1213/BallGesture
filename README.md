@@ -101,7 +101,7 @@ The defaults follow the common 3D mouse layout used by Bambu Studio, PrusaSlicer
 
 Each action can send any of these: Left Drag, Right Drag, Middle Drag, Shift + Middle Drag, Scroll, Shift + Scroll, Pinch, or Wheel. Zoom uses vertical movement only; moving up zooms in. Each action also has its own **Reverse** switch, independent of the scroll direction setting.
 
-Apps that navigate differently get their own settings. The CAD page in the settings window lists them under **Apps**, with **All Other Apps** first; click one to show and edit its output below the list, and use **Add App** to add a running app or one from /Applications. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
+Apps that navigate differently get their own settings. The CAD page in the settings window shows every app under **Apps**, each with its own Pan, Zoom and Rotate output, starting with **All Other Apps**. Use **Add App** to add a running app or one from /Applications, and **Remove** on an app to go back to All Other Apps. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
 
 | Action | Output |
 | --- | --- |
@@ -354,7 +354,7 @@ CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面�
 
 各操作で送るものは Left Drag・Right Drag・Middle Drag・Shift + Middle Drag・Scroll・Shift + Scroll・Pinch・Wheel から選べます。ズームは上下の動きだけを使い、上に動かすと拡大します。操作ごとに **Reverse**（向きを逆にする）があり、スクロールの向きの設定とは別に効きます。
 
-操作が違うアプリには専用の設定を作れます。設定画面の CAD ページの **Apps** に、先頭の **All Other Apps**（ほかのすべてのアプリ）と、専用の設定があるアプリが並びます。アプリを押すと、その下にそのアプリの送るものの設定が出ます。アプリを足すときは **Add App** から、起動中のアプリか /Applications のアプリを選びます。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
+操作が違うアプリには専用の設定を作れます。設定画面の CAD ページの **Apps** に、先頭の **All Other Apps**（ほかのすべてのアプリ）と、専用の設定があるアプリが、それぞれの Pan・Zoom・Rotate の送るものと一緒に並びます。アプリを足すときは **Add App** から、起動中のアプリか /Applications のアプリを選びます。**Remove** で外すと All Other Apps の設定に戻ります。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
 
 | 操作 | 送るもの |
 | --- | --- |

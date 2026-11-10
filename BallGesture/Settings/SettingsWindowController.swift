@@ -52,6 +52,8 @@ final class SettingsModel: ObservableObject {
     @Published var page: SettingsPage = .general
     @Published var dropdown: DropdownRequest?
     @Published var lastCaptureTarget: KeyCaptureTarget?
+    /// A view on the page to bring into sight, by its id; cleared once scrolled to.
+    @Published var scrollTarget: String?
 
     func select(_ page: SettingsPage, animated: Bool) {
         guard page != self.page else { return }

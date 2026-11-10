@@ -209,10 +209,8 @@ struct GestureSettingsPage: View {
 struct CADSettingsPage: View {
     @ObservedObject private var settings = AppSettings.shared
     @EnvironmentObject private var model: SettingsModel
-    /// Bundle ID of the app whose outputs are shown; empty for the default set.
-    @State private var selectedApp = ""
-    @Namespace private var appHighlight
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let allOtherApps = ""
 
     var body: some View {
         SettingsPageScaffold(page: .cad) {
@@ -229,90 +227,72 @@ struct CADSettingsPage: View {
                 SliderRow(title: "Sensitivity", value: $settings.threeDSensitivity, range: 0.1...5.0, format: SliderRow.multiplier)
             }
 
-            appsGroup
-
-            SettingsGroup(title: "Output in \(selectedAppName)") {
-                ForEach(Array(ThreeDAction.allCases.enumerated()), id: \.element) { index, action in
-                    if index > 0 { SettingsDivider() }
-                    outputRow(action)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Apps")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.dimWhite)
+                    Spacer()
+                    AddAppButton(added: Set(settings.threeDAppProfiles.map(\.bundleID)), onAdd: addApp)
                 }
-                if let reversesShiftScroll = reversesShiftScrollBinding {
-                    SettingsDivider()
-                    ToggleRow(
-                        title: "Reverse Shift + Trackpad Scroll",
-                        subtitle: "For apps that pan the wrong way with Shift and two fingers.",
-                        isOn: reversesShiftScroll
-                    )
-                }
-            }
-        }
-    }
-
-    private var appsGroup: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Apps")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Palette.dimWhite)
-                Spacer()
-                AddAppButton(added: Set(settings.threeDAppProfiles.map(\.bundleID)), onAdd: addApp)
-            }
-            .padding(.horizontal, 4)
-            VStack(spacing: 2) {
-                appRow(
-                    bundleID: "",
-                    name: "All Other Apps",
-                    icon: NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: nil) ?? NSImage()
-                )
-                ForEach(settings.threeDAppProfiles) { app in
-                    appRow(bundleID: app.bundleID, name: AppInfo.name(for: app.bundleID), icon: AppInfo.icon(for: app.bundleID))
-                }
-            }
-            .padding(5)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
-            Text("Each app can send its own output. Apps not listed use All Other Apps.")
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.dimWhite)
                 .padding(.horizontal, 4)
-        }
-    }
-
-    private func appRow(bundleID: String, name: String, icon: NSImage) -> some View {
-        let isSelected = selectedApp == bundleID
-        return HStack(spacing: 8) {
-            Image(nsImage: icon)
-                .resizable()
-                .frame(width: 18, height: 18)
-            Text(name)
-                .font(.system(size: 13))
-                .lineLimit(1)
-                .foregroundStyle(isSelected ? Palette.brightWhite : Palette.white)
-            Spacer()
-            if !bundleID.isEmpty {
-                Image(systemName: "minus.circle")
+                Text("What each key sends, app by app. Apps without their own entry use All Other Apps.")
+                    .font(.system(size: 11))
                     .foregroundStyle(Palette.dimWhite)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-                    .onTapGesture { removeApp(bundleID) }
-                    .help("Remove")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+
+            appCard(
+                bundleID: Self.allOtherApps,
+                name: "All Other Apps",
+                icon: NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: nil) ?? NSImage()
+            )
+            ForEach(settings.threeDAppProfiles) { app in
+                appCard(bundleID: app.bundleID, name: AppInfo.name(for: app.bundleID), icon: AppInfo.icon(for: app.bundleID))
+                    .id(app.bundleID)
             }
         }
-        .padding(.horizontal, 9)
-        .frame(height: 32)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Palette.selection)
-                    .matchedGeometryEffect(id: "cadAppSelection", in: appHighlight)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { select(bundleID) }
     }
 
-    private func outputRow(_ action: ThreeDAction) -> some View {
-        let binding = selectedProfile.wrappedValue[action]
+    /// One app with everything it sends, so every app's settings can be read at a glance.
+    private func appCard(bundleID: String, name: String, icon: NSImage) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 20, height: 20)
+                Text(name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.brightWhite)
+                    .lineLimit(1)
+                Spacer()
+                if bundleID != Self.allOtherApps {
+                    TextButton(title: "Remove", color: Palette.red) { removeApp(bundleID) }
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 42)
+            SettingsDivider()
+            ForEach(Array(ThreeDAction.allCases.enumerated()), id: \.element) { index, action in
+                if index > 0 { SettingsDivider() }
+                outputRow(action, profile: profile(for: bundleID))
+            }
+            if let reversesShiftScroll = reversesShiftScrollBinding(for: bundleID) {
+                SettingsDivider()
+                ToggleRow(
+                    title: "Reverse Shift + Trackpad Scroll",
+                    subtitle: "For apps that pan the wrong way with Shift and two fingers.",
+                    isOn: reversesShiftScroll
+                )
+            }
+        }
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+
+    private func outputRow(_ action: ThreeDAction, profile: Binding<ThreeDProfile>) -> some View {
+        let binding = profile.wrappedValue[action]
         return SettingsRow(
             title: action.displayName,
             subtitle: KeyCodeNaming.displayName(for: settings.threeDTriggerKeyCode(for: action))
@@ -325,15 +305,15 @@ struct CADSettingsPage: View {
                     width: 170
                 ) { id in
                     guard let output = ThreeDOutput(rawValue: id) else { return }
-                    selectedProfile.wrappedValue[action].output = output
+                    profile.wrappedValue[action].output = output
                 }
                 HStack(spacing: 6) {
                     Text("Reverse")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.dimWhite)
                     Toggle("", isOn: Binding(
-                        get: { selectedProfile.wrappedValue[action].reversed },
-                        set: { selectedProfile.wrappedValue[action].reversed = $0 }
+                        get: { profile.wrappedValue[action].reversed },
+                        set: { profile.wrappedValue[action].reversed = $0 }
                     ))
                     .labelsHidden()
                     .toggleStyle(.smallGlassSwitch)
@@ -342,14 +322,9 @@ struct CADSettingsPage: View {
         }
     }
 
-    private var selectedAppName: String {
-        selectedApp.isEmpty ? "All Other Apps" : AppInfo.name(for: selectedApp)
-    }
-
-    /// The profile being edited: the selected app's override, or the default set.
-    private var selectedProfile: Binding<ThreeDProfile> {
+    /// The app's own outputs, or the default set for All Other Apps.
+    private func profile(for bundleID: String) -> Binding<ThreeDProfile> {
         let settings = settings
-        let bundleID = selectedApp
         return Binding(
             get: { settings.threeDAppProfiles.first { $0.bundleID == bundleID }?.profile ?? settings.threeDDefaultProfile },
             set: { profile in
@@ -362,10 +337,9 @@ struct CADSettingsPage: View {
         )
     }
 
-    /// The selected app's switch; nil while All Other Apps is selected,
-    /// because the switch belongs to one app, never to the default set.
-    private var reversesShiftScrollBinding: Binding<Bool>? {
-        let bundleID = selectedApp
+    /// The app's switch; nil for All Other Apps, because the switch belongs to one app,
+    /// never to the default set.
+    private func reversesShiftScrollBinding(for bundleID: String) -> Binding<Bool>? {
         guard settings.threeDAppProfiles.contains(where: { $0.bundleID == bundleID }) else { return nil }
         let settings = settings
         return Binding(
@@ -378,17 +352,13 @@ struct CADSettingsPage: View {
         )
     }
 
-    private func select(_ bundleID: String) {
-        withAnimation(Motion.selection(reduceMotion: reduceMotion)) { selectedApp = bundleID }
-    }
-
     private func addApp(_ bundleID: String) {
         settings.addThreeDAppProfile(bundleID: bundleID)
-        select(bundleID)
+        // The new card goes at the end of the page, often out of view.
+        model.scrollTarget = bundleID
     }
 
     private func removeApp(_ bundleID: String) {
-        if selectedApp == bundleID { select("") }
         settings.threeDAppProfiles.removeAll { $0.bundleID == bundleID }
     }
 }
