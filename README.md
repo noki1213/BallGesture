@@ -6,7 +6,7 @@ Hold a key, move your trackball, and BallGesture turns that movement into scroll
 
 It was built for trackballs, where spinning the ball is comfortable but reaching for a scroll ring or a modifier chord is not. It works with any mouse or trackpad as well.
 
-BallGesture lives in the menu bar and has no main window.
+BallGesture lives in the menu bar. Its one window is the settings window.
 
 ## Requirements
 
@@ -14,7 +14,7 @@ BallGesture lives in the menu bar and has no main window.
 - Apple Silicon or Intel (the released build is universal)
 - Accessibility permission (required — see below)
 
-BallGesture watches keyboard and mouse events through a `CGEventTap`, which macOS only allows with Accessibility permission. On first launch, open the menu bar icon and use the **Open Accessibility Settings** button, then allow BallGesture under System Settings → Privacy & Security → Accessibility. Once permission is granted, the event tap starts within a few seconds — no restart needed.
+BallGesture watches keyboard and mouse events through a `CGEventTap`, which macOS only allows with Accessibility permission. On first launch, open **Settings… → General** from the menu bar icon and use the **Open Accessibility Settings** button, then allow BallGesture under System Settings → Privacy & Security → Accessibility. Once permission is granted, the event tap starts within a few seconds — no restart needed.
 
 ## Installation
 
@@ -54,7 +54,7 @@ To build from the Xcode GUI instead, open `BallGesture.xcodeproj` and build the 
 
 ## Usage
 
-Each mode is bound to a trigger key. Hold the key, move the ball, release. All six keys can be reassigned from the menu bar. A trackpad works the same way: hold the key and slide one finger.
+Each mode is bound to a trigger key. Hold the key, move the ball, release. All six keys can be reassigned in the settings window. A trackpad works the same way: hold the key and slide one finger.
 
 ### Scroll Mode — hold F15
 
@@ -101,7 +101,7 @@ The defaults follow the common 3D mouse layout used by Bambu Studio, PrusaSlicer
 
 Each action can send any of these: Left Drag, Right Drag, Middle Drag, Shift + Middle Drag, Scroll, Shift + Scroll, Pinch, or Wheel. Zoom uses vertical movement only; moving up zooms in. Each action also has its own **Reverse** switch, independent of the scroll direction setting.
 
-Apps that navigate differently get their own settings. The CAD Mode section lists them under **Apps**, with **All Other Apps** first; click one to show and edit its keys below the list, and use **Add App…** to add another. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
+Apps that navigate differently get their own settings. The CAD page in the settings window lists them under **Apps**, with **All Other Apps** first; click one to show and edit its output below the list, and use **Add App** to add a running app or one from /Applications. The app that is frontmost when you press the key decides which settings apply. For example, Autodesk Fusion with its trackpad-style navigation works with:
 
 | Action | Output |
 | --- | --- |
@@ -115,7 +115,7 @@ Some apps pan on Shift + two-finger trackpad scroll with a fixed direction, so t
 
 ### Auto Mouse Layer — move the ball, then press J / K / L
 
-For a trackball and a keyboard that are separate devices, the way keyboard firmware such as QMK or ZMK switches to a mouse layer while the ball moves. Turn on **Auto Mouse Layer** in the menu. Once the pointer moves, these keys click at the pointer instead of typing:
+For a trackball and a keyboard that are separate devices, the way keyboard firmware such as QMK or ZMK switches to a mouse layer while the ball moves. Turn on **Auto Mouse Layer** on the Mouse Layer page of the settings window. Once the pointer moves, these keys click at the pointer instead of typing:
 
 | Key | Sends |
 | --- | --- |
@@ -131,7 +131,18 @@ Keyboards with home row mods send a modifier instead of the letter while J, K or
 
 ## Settings
 
-Click the menu bar icon to open the settings panel. Settings are grouped in tabs by mode — Scroll, Zoom, Gesture, CAD and Mouse — and each tab holds that mode's trigger keys.
+The menu bar icon opens a small panel with the **Enabled** switch, the Accessibility status, **Settings…** and **Quit**. **Settings…** opens the settings window, which lists its pages on the left — General, Scroll, Zoom, Gesture, CAD and Mouse Layer — and shows the chosen page on the right. Changes apply as soon as they are made.
+
+To assign a key, click the key box and press the key. Press Esc or click the box again to cancel. Opening BallGesture again from Finder or Spotlight while it runs also opens the settings window, and so does its URL:
+
+| URL | Opens |
+| --- | --- |
+| `ballgesture://settings` | The settings window |
+| `ballgesture://settings/<page>` | One page: `general`, `scroll`, `zoom`, `gesture`, `cad`, `mouse-layer` |
+
+```sh
+open ballgesture://settings/cad
+```
 
 | Setting | Default | Range |
 | --- | --- | --- |
@@ -153,9 +164,48 @@ Click the menu bar icon to open the settings panel. Settings are grouped in tabs
 | Auto Mouse Layer hold keys | None | Any key, including modifiers |
 | Auto Mouse Layer time | 700 ms | 200 – 2000 ms |
 
-The panel also shows live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
+The panel and the General page show live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
 
-Settings are stored in `~/Library/Preferences/com.noki.BallGesture.plist`.
+### Settings file
+
+Settings are stored in `~/.config/ballgesture/config.json`, which can be edited by hand; saved edits apply within a second, without restarting. The file may be a symbolic link (for example into a dotfiles repository): BallGesture follows the link, writes to its target and leaves the link in place. Keys BallGesture does not know are kept when it writes. A value it cannot read falls back to its default, and the General page says which one; a file that is not valid JSON is never overwritten.
+
+Keys are written by name: `f15`, `j`, `space`, `right_cmd`, `left_option`, and so on. An unset hold key is `""`.
+
+```json
+{
+  "enabled": true,
+  "scroll": { "trigger": "f15", "naturalDirection": true, "sensitivity": 1, "momentum": true, "momentumStrength": 0.5 },
+  "zoom": { "trigger": "f16", "method": "pinch", "sensitivity": 1 },
+  "gesture": { "trigger": "f17", "distance": 50 },
+  "cad": {
+    "keys": { "pan": "f18", "zoom": "f19", "rotate": "f20" },
+    "sensitivity": 1,
+    "default": {
+      "pan": { "output": "rightDrag", "reversed": false },
+      "zoom": { "output": "wheel", "reversed": false },
+      "rotate": { "output": "leftDrag", "reversed": false }
+    },
+    "apps": [
+      {
+        "bundleID": "com.example.app",
+        "pan": { "output": "middleDrag", "reversed": false },
+        "zoom": { "output": "scroll", "reversed": false },
+        "rotate": { "output": "rightDrag", "reversed": false },
+        "reverseShiftTrackpadScroll": false
+      }
+    ]
+  },
+  "mouseLayer": {
+    "enabled": false,
+    "stayOnSeconds": 0.7,
+    "keys": { "left": "j", "right": "k", "middle": "l" },
+    "holdKeys": { "left": "", "right": "", "middle": "" }
+  }
+}
+```
+
+`method` is `pinch`, `ctrlScroll` or `cmdScroll`. `output` is `leftDrag`, `rightDrag`, `middleDrag`, `shiftMiddleDrag`, `scroll`, `shiftScroll`, `pinch` or `wheel`. `mouseLayer.device` is written when one device is chosen and left out for any pointer.
 
 ## Security and Privacy
 
@@ -187,7 +237,7 @@ The source is here in full, so you can verify all of this rather than take my wo
 tccutil reset Accessibility com.noki.BallGesture
 ```
 
-Then re-enable BallGesture in System Settings and restart it. The menu bar panel has a **Copy 'Reset Permission' Command** button that copies this line for you.
+Then re-enable BallGesture in System Settings and restart it. The General page in the settings window has a **Copy Command** button that copies this line for you.
 
 **Working out what is happening.** BallGesture logs trigger key presses, mode transitions, and event tap creation:
 
@@ -209,7 +259,7 @@ MIT License. See [LICENSE](LICENSE).
 
 トラックボールのために作りました。ボールを回すのは快適なのに、スクロールリングに指を伸ばしたり修飾キーを押さえたりするのは快適ではない、という不満が出発点です。普通のマウスやトラックパッドでも動きます。
 
-メニューバーに常駐し、メインウィンドウはありません。
+メニューバーに常駐します。ウィンドウは設定画面だけです。
 
 ## 動作環境
 
@@ -217,7 +267,7 @@ MIT License. See [LICENSE](LICENSE).
 - Apple Silicon / Intel（配布しているアプリは両対応）
 - アクセシビリティ権限（必須）
 
-BallGesture は `CGEventTap` でキーボードとマウスのイベントを監視しますが、macOS はこれをアクセシビリティ権限がある場合にしか許可しません。初回はメニューバーアイコンを開き **Open Accessibility Settings** ボタンから、システム設定 → プライバシーとセキュリティ → アクセシビリティ で BallGesture を許可してください。許可すれば数秒以内に自動でイベントタップが起動するので、アプリの再起動は不要です。
+BallGesture は `CGEventTap` でキーボードとマウスのイベントを監視しますが、macOS はこれをアクセシビリティ権限がある場合にしか許可しません。初回はメニューバーアイコンの **Settings… → General** を開き **Open Accessibility Settings** ボタンから、システム設定 → プライバシーとセキュリティ → アクセシビリティ で BallGesture を許可してください。許可すれば数秒以内に自動でイベントタップが起動するので、アプリの再起動は不要です。
 
 ## インストール
 
@@ -257,7 +307,7 @@ Xcode の画面からビルドする場合は、`BallGesture.xcodeproj` を開�
 
 ## 使い方
 
-各モードにトリガーキーが割り当てられています。キーを押しながらボールを動かし、離す、という操作です。6つのキーはすべてメニューバーから変更できます。トラックパッドでも、キーを押しながら1本指でなぞれば同じように動きます。
+各モードにトリガーキーが割り当てられています。キーを押しながらボールを動かし、離す、という操作です。6つのキーはすべて設定画面で変更できます。トラックパッドでも、キーを押しながら1本指でなぞれば同じように動きます。
 
 ### Scroll Mode — F15 を押しながら
 
@@ -304,7 +354,7 @@ CAD、スライサー、ブラウザ内の WebGL ビューアなど、3D 画面�
 
 各操作で送るものは Left Drag・Right Drag・Middle Drag・Shift + Middle Drag・Scroll・Shift + Scroll・Pinch・Wheel から選べます。ズームは上下の動きだけを使い、上に動かすと拡大します。操作ごとに **Reverse**（向きを逆にする）があり、スクロールの向きの設定とは別に効きます。
 
-操作が違うアプリには専用の設定を作れます。CAD Mode の **Apps** に、先頭の **All Other Apps**（ほかのすべてのアプリ）と、専用の設定があるアプリが並びます。アプリを押すと、その下にそのアプリのキーの設定が出ます。アプリを足すときは **Add App…** を使います。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
+操作が違うアプリには専用の設定を作れます。設定画面の CAD ページの **Apps** に、先頭の **All Other Apps**（ほかのすべてのアプリ）と、専用の設定があるアプリが並びます。アプリを押すと、その下にそのアプリの送るものの設定が出ます。アプリを足すときは **Add App** から、起動中のアプリか /Applications のアプリを選びます。キーを押した瞬間に最前面にあるアプリの設定が使われます。たとえば Autodesk Fusion のトラックパッド向けの操作なら次の設定で動きます。
 
 | 操作 | 送るもの |
 | --- | --- |
@@ -318,7 +368,7 @@ Shift を押しながらのトラックパッドの2本指スクロールで、�
 
 ### Auto Mouse Layer — ボールを動かしてから J / K / L
 
-トラックボールとキーボードが別々の機器でも、QMK や ZMK などのキーボードのファームウェアが持つ「ボールを動かしている間だけマウスレイヤーに切り替わる」動きを使えます。メニューで **Auto Mouse Layer** をオンにします。ポインタが動くと、次のキーが文字の代わりにポインタの位置でクリックします。
+トラックボールとキーボードが別々の機器でも、QMK や ZMK などのキーボードのファームウェアが持つ「ボールを動かしている間だけマウスレイヤーに切り替わる」動きを使えます。設定画面の Mouse Layer ページで **Auto Mouse Layer** をオンにします。ポインタが動くと、次のキーが文字の代わりにポインタの位置でクリックします。
 
 | キー | 送るもの |
 | --- | --- |
@@ -334,7 +384,18 @@ Shift を押しながらのトラックパッドの2本指スクロールで、�
 
 ## 設定項目
 
-メニューバーのアイコンをクリックすると設定画面が開きます。設定はモードごとのタブ（Scroll・Zoom・Gesture・CAD・Mouse）に分かれていて、トリガーキーもそれぞれのタブにあります。
+メニューバーのアイコンをクリックすると、**Enabled** のスイッチ・アクセシビリティの状態・**Settings…**・**Quit** だけの小さなパネルが開きます。**Settings…** で設定画面のウィンドウが開きます。左にページ（General・Scroll・Zoom・Gesture・CAD・Mouse Layer）が並び、選んだページの中身が右に出ます。変更はその場で効きます。
+
+キーを割り当てるときは、キーの枠をクリックしてから割り当てたいキーを押します。Esc か、枠をもう一度クリックすると取り消せます。起動中の BallGesture を Finder や Spotlight からもう一度開いたときと、次の URL でも設定画面が開きます。
+
+| URL | 開くもの |
+| --- | --- |
+| `ballgesture://settings` | 設定画面 |
+| `ballgesture://settings/<ページ>` | そのページ：`general`・`scroll`・`zoom`・`gesture`・`cad`・`mouse-layer` |
+
+```sh
+open ballgesture://settings/cad
+```
 
 | 設定 | 初期値 | 範囲 |
 | --- | --- | --- |
@@ -356,9 +417,13 @@ Shift を押しながらのトラックパッドの2本指スクロールで、�
 | Auto Mouse Layer の長押しキー | なし | 修飾キーを含む任意のキー |
 | Auto Mouse Layer の時間 | 700 ms | 200 – 2000 ms |
 
-アクセシビリティの状態も表示されます。緑はイベントタップ稼働中、黄は権限待ちで自動リトライ中、赤は未許可です。
+パネルと General ページにはアクセシビリティの状態が出ます。緑はイベントタップ稼働中、黄は権限待ちで自動リトライ中、赤は未許可です。
 
-設定は `~/Library/Preferences/com.noki.BallGesture.plist` に保存されます。
+### 設定ファイル
+
+設定は `~/.config/ballgesture/config.json` に保存されます。手で書き換えてもよく、保存すれば1秒以内に再起動なしで効きます。このファイルはシンボリックリンク（dotfiles のリポジトリへのリンクなど）でもかまいません。BallGesture はリンクをたどってリンク先に書き込み、リンクはそのまま残します。BallGesture が知らない項目は、書き込むときも残します。読めない値はその項目だけ初期値に戻し、どの項目かを General ページに出します。JSON として読めないファイルには書き込みません。
+
+キーは名前で書きます：`f15`・`j`・`space`・`right_cmd`・`left_option` など。長押しキーを外すときは `""` にします。項目の形は英語版の例を見てください。
 
 ## セキュリティとプライバシー
 
@@ -390,7 +455,7 @@ Shift を押しながらのトラックパッドの2本指スクロールで、�
 tccutil reset Accessibility com.noki.BallGesture
 ```
 
-その後システム設定で BallGesture を許可し直し、アプリを再起動します。メニューの **Copy 'Reset Permission' Command** ボタンでこの行をコピーできます。
+その後システム設定で BallGesture を許可し直し、アプリを再起動します。設定画面の General ページの **Copy Command** ボタンでこの行をコピーできます。
 
 **何が起きているか調べる。** トリガーキーの押下、モードの開始と終了、イベントタップの生成可否がログに出ます。
 

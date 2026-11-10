@@ -2,8 +2,7 @@
 //  MenuPanel.swift
 //  BallGesture
 //
-//  The menu bar icon's panel: the settings on a dark Liquid Glass sheet
-//  under the status item.
+//  The menu bar icon's panel: a dark Liquid Glass sheet under the status item.
 //
 
 import AppKit
@@ -17,6 +16,8 @@ final class MenuPanelState: ObservableObject {
     /// Where the status item sits along the panel's width (0 = left edge, 1 = right edge), so the
     /// open animation grows from the clicked icon even when the panel had to shift to stay on-screen.
     @Published var materializeAnchorX: CGFloat = 0.5
+    /// Closes the panel from inside it.
+    var dismiss: () -> Void = {}
 }
 
 struct MenuPanelView: View {
@@ -31,7 +32,7 @@ struct MenuPanelView: View {
     static let margin: CGFloat = 24
 
     var body: some View {
-        MenuBarContentView()
+        MenuBarContentView(dismiss: state.dismiss)
             .fixedSize(horizontal: false, vertical: true)
             .background(GlassBackground(shape: shape))
             .clipShape(shape)
@@ -81,8 +82,9 @@ final class MenuPanelController {
         // The sheet is always dark, so system text and controls take their dark-ground colours
         // whatever the system appearance is.
         panel.appearance = NSAppearance(named: .darkAqua)
+        state.dismiss = { [weak self] in self?.hide() }
 
-        // One hosting view for the panel's lifetime keeps the chosen tab between openings.
+        // One hosting view for the panel's lifetime, so opening it doesn't rebuild the content.
         hostingView = NSHostingView(rootView: MenuPanelView(state: state, onSizeChange: { [weak self] size in
             self?.contentSizeChanged(size)
         }))
@@ -104,8 +106,7 @@ final class MenuPanelController {
         onVisibilityChanged?(true)
         DispatchQueue.main.async { [weak self] in
             guard let self, self.panel.isVisible else { return }
-            let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            withAnimation(reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.30, dampingFraction: 1)) {
+            withAnimation(Motion.materialize(reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)) {
                 self.state.materializeProgress = 1
             }
         }
@@ -119,7 +120,7 @@ final class MenuPanelController {
         onVisibilityChanged?(false)
     }
 
-    /// Follows the content's height as tabs and sections change.
+    /// Follows the content's height as rows come and go.
     private func contentSizeChanged(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         contentSize = size
@@ -133,7 +134,7 @@ final class MenuPanelController {
             // The hosting view reports no fitting size (its sizing options are off), and the content
             // only reports its own size once it is laid out in a window of real size. Until then,
             // measure a copy of the view so the panel opens at a real size; the content's own report
-            // then corrects the height for the tab actually shown.
+            // then corrects it.
             let unbounded = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             measured = NSHostingController(rootView: MenuPanelView(state: state, onSizeChange: { _ in }))
                 .sizeThatFits(in: unbounded)
@@ -163,8 +164,6 @@ final class MenuPanelController {
         removeMonitors()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.panel.isKeyWindow else { return event }
-            // While a trigger key is being recorded, every key belongs to the recorder.
-            guard AppSettings.shared.captureTarget == nil else { return event }
             if event.keyCode == 53 { // Esc
                 self.hide()
                 return nil
@@ -174,8 +173,6 @@ final class MenuPanelController {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self else { return }
             if self.statusItemFrame.contains(NSEvent.mouseLocation) { return }
-            // A modal dialog opened from the panel (the app chooser) is still using it.
-            if NSApp.modalWindow != nil { return }
             Task { @MainActor in self.hide() }
         }
     }
@@ -185,50 +182,5 @@ final class MenuPanelController {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         keyMonitor = nil
         clickMonitor = nil
-    }
-}
-
-// MARK: - Material
-
-private enum PanelPalette {
-    static let black = Color(.sRGB, red: 0x26 / 255, green: 0x24 / 255, blue: 0x27 / 255, opacity: 1)
-}
-
-private struct VisualEffectView: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
-    }
-}
-
-/// Liquid Glass tinted dark where the system has it, frosted blur under the same tint before that.
-/// The tint fixes how bright the ground is, so light text stays readable over any window behind.
-private struct GlassBackground<S: Shape>: View {
-    let shape: S
-
-    var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer {
-                shape
-                    .fill(Color.clear)
-                    .glassEffect(.regular.tint(PanelPalette.black.opacity(0.60)), in: shape)
-            }
-        } else {
-            ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                PanelPalette.black.opacity(0.60)
-            }
-        }
     }
 }

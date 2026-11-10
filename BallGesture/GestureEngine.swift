@@ -16,7 +16,7 @@ import Combine
 import CoreGraphics
 import os
 
-/// Reflects whether the CGEventTap is actually alive, for the menu bar UI.
+/// Reflects whether the CGEventTap is actually alive, for the menu panel and the settings window.
 /// Accessibility permission can be granted *after* launch (or after the app
 /// bundle was reinstalled, which invalidates the previous grant), so this is
 /// not the same thing as `AccessibilityPermission.isTrusted` — it's whether
@@ -539,8 +539,14 @@ final class GestureEngine: ObservableObject {
             "\(type == .keyDown ? "keyDown" : "keyUp", privacy: .public) keyCode=\(keyCode, privacy: .public) repeat=\(isRepeat, privacy: .public)"
         )
 
-        // Key-capture UI ("Set Key" in the menu) takes priority over normal handling.
+        // The key recorder in the settings window takes priority over normal handling.
         if settings.captureTarget != nil {
+            if type == .keyDown, keyCode == Int64(kVK_Escape) {
+                // Esc cancels recording rather than becoming the key.
+                settings.cancelCapture()
+                pendingCaptureSwallowKeyCode = keyCode
+                return nil
+            }
             if type == .keyDown {
                 if settings.handleCapturedKeyCode(keyCode) {
                     Self.logger.notice("Captured keyCode=\(keyCode, privacy: .public) for trigger key assignment.")
