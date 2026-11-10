@@ -374,8 +374,6 @@ private struct AddAppButton: View {
     @State private var frame: CGRect = .zero
     @State private var isHovered = false
 
-    private static let chooseID = "\u{0}choose"
-
     var body: some View {
         Text("Add App")
             .font(.system(size: 13, weight: .medium))
@@ -389,56 +387,43 @@ private struct AddAppButton: View {
 
     private func open() {
         AppSettings.shared.cancelCapture()
-        let running = runningApps.map {
-            DropdownOption(id: $0.bundleIdentifier ?? "", title: $0.localizedName ?? $0.bundleIdentifier ?? "", icon: $0.icon)
-        }
-        let choose = DropdownOption(
-            id: Self.chooseID,
-            title: "Choose from Applications…",
-            icon: NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
-        )
+        let options = candidateApps.map { DropdownOption(id: $0.id, title: $0.title, icon: $0.icon) }
+        guard !options.isEmpty else { return }
         let width: CGFloat = 240
         // Right-aligned with the button, which sits at the right end of the row.
         let anchor = CGRect(x: frame.maxX - width, y: frame.minY, width: width, height: frame.height)
-        model.dropdown = DropdownRequest(anchor: anchor, width: width, options: running + [choose], selectedID: nil) { id in
-            if id == Self.chooseID {
-                chooseApplications()
-            } else {
-                onAdd(id)
-            }
+        model.dropdown = DropdownRequest(anchor: anchor, width: width, options: options, selectedID: nil) { id in
+            onAdd(id)
         }
     }
 
-    private var runningApps: [NSRunningApplication] {
+    /// Running apps first, then the rest of the installed applications.
+    private var candidateApps: [(id: String, title: String, icon: NSImage)] {
         var seen = added
         seen.insert(Bundle.main.bundleIdentifier ?? "")
-        return NSWorkspace.shared.runningApplications
-            .filter { app in
-                guard app.activationPolicy == .regular, let bundleID = app.bundleIdentifier else { return false }
-                return seen.insert(bundleID).inserted
-            }
+        func entry(_ id: String, _ name: String, _ icon: NSImage) -> (id: String, title: String, icon: NSImage)? {
+            seen.insert(id).inserted ? (id, name, icon) : nil
+        }
+        let running = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
             .sorted { ($0.localizedName ?? "").localizedStandardCompare($1.localizedName ?? "") == .orderedAscending }
-    }
-
-    private func chooseApplications() {
-        let panel = NSOpenPanel()
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.allowedContentTypes = [.application]
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        panel.prompt = "Add"
-        let add: ([URL]) -> Void = { urls in
-            for url in urls {
-                if let bundleID = Bundle(url: url)?.bundleIdentifier { onAdd(bundleID) }
+            .compactMap { app -> (id: String, title: String, icon: NSImage)? in
+                guard let id = app.bundleIdentifier else { return nil }
+                return entry(id, app.localizedName ?? id, app.icon ?? NSImage())
             }
-        }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window) { response in
-                if response == .OK { add(panel.urls) }
+        let fm = FileManager.default
+        let dirs = ["/Applications", "/System/Applications", NSHomeDirectory() + "/Applications"]
+        let installed = dirs
+            .flatMap { dir in
+                ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasSuffix(".app") }.map { dir + "/" + $0 }
             }
-        } else if panel.runModal() == .OK {
-            add(panel.urls)
-        }
+            .sorted { ($0 as NSString).lastPathComponent.localizedStandardCompare(($1 as NSString).lastPathComponent) == .orderedAscending }
+            .compactMap { path -> (id: String, title: String, icon: NSImage)? in
+                guard let id = Bundle(path: path)?.bundleIdentifier else { return nil }
+                let name = (path as NSString).lastPathComponent.replacingOccurrences(of: ".app", with: "")
+                return entry(id, name, NSWorkspace.shared.icon(forFile: path))
+            }
+        return running + installed
     }
 }
 
