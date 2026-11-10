@@ -2,7 +2,8 @@
 //  AppSettings.swift
 //  BallGesture
 //
-//  UserDefaults-backed settings, shared between the menu bar UI and GestureEngine.
+//  Settings stored in ~/.config/ballgesture/config.json, shared between the
+//  settings window and GestureEngine.
 //
 
 import Carbon.HIToolbox
@@ -146,7 +147,7 @@ enum AutoMouseButton: String, CaseIterable, Identifiable {
     }
 }
 
-/// Which trigger key is currently being (re)captured from the "Set Key" UI.
+/// Which trigger key is currently being recorded from the settings window.
 enum KeyCaptureTarget: Equatable {
     case scrollTrigger
     case zoomTrigger
@@ -160,212 +161,273 @@ enum KeyCaptureTarget: Equatable {
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    private enum Keys {
-        static let isEnabled = "BallGesture.isEnabled"
-        static let scrollSensitivity = "BallGesture.scrollSensitivity"
-        static let zoomSensitivity = "BallGesture.zoomSensitivity"
-        static let naturalScrollDirection = "BallGesture.naturalScrollDirection"
-        static let momentumScrollingEnabled = "BallGesture.momentumScrollingEnabled"
-        static let momentumStrength = "BallGesture.momentumStrength"
-        static let zoomMethod = "BallGesture.zoomMethod"
-        static let scrollTriggerKeyCode = "BallGesture.scrollTriggerKeyCode"
-        static let zoomTriggerKeyCode = "BallGesture.zoomTriggerKeyCode"
-        static let gestureTriggerKeyCode = "BallGesture.gestureTriggerKeyCode"
-        static let gestureDistance = "BallGesture.gestureDistance"
-        static let threeDSensitivity = "BallGesture.threeDSensitivity"
-        static let threeDDefaultProfile = "BallGesture.threeDDefaultProfile"
-        static let threeDAppProfiles = "BallGesture.threeDAppProfiles"
-        static func threeDTriggerKeyCode(_ action: ThreeDAction) -> String {
-            "BallGesture.threeDTriggerKeyCode.\(action.rawValue)"
-        }
-        static let autoMouseEnabled = "BallGesture.autoMouseEnabled"
-        static let autoMouseDevice = "BallGesture.autoMouseDevice"
-        static let autoMouseTimeout = "BallGesture.autoMouseTimeout"
-        static func autoMouseKeyCode(_ button: AutoMouseButton) -> String {
-            "BallGesture.autoMouseKeyCode.\(button.rawValue)"
-        }
-        static func autoMouseHoldKeyCode(_ button: AutoMouseButton) -> String {
-            "BallGesture.autoMouseHoldKeyCode.\(button.rawValue)"
-        }
-    }
+    /// Hand-editable; read at launch, watched while running, and written as
+    /// settings change in the app.
+    static let configFileURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".config/ballgesture/config.json")
 
-    static let defaultScrollTriggerKeyCode = Int64(kVK_F15) // 113
-    static let defaultZoomTriggerKeyCode = Int64(kVK_F16)   // 106
-    static let defaultGestureTriggerKeyCode = Int64(64)     // F17
+    static let defaultScrollTriggerKeyCode = ConfigValues.defaultScrollTriggerKeyCode
+    static let defaultZoomTriggerKeyCode = ConfigValues.defaultZoomTriggerKeyCode
+    static let defaultGestureTriggerKeyCode = ConfigValues.defaultGestureTriggerKeyCode
     static func defaultThreeDTriggerKeyCode(_ action: ThreeDAction) -> Int64 {
-        switch action {
-        case .pan: return Int64(kVK_F18)
-        case .zoom: return Int64(kVK_F19)
-        case .rotate: return Int64(kVK_F20)
-        }
+        ConfigValues.defaultThreeDTriggerKeyCode(action)
     }
     static func defaultAutoMouseKeyCode(_ button: AutoMouseButton) -> Int64 {
-        switch button {
-        case .left: return Int64(kVK_ANSI_J)
-        case .right: return Int64(kVK_ANSI_K)
-        case .middle: return Int64(kVK_ANSI_L)
-        }
+        ConfigValues.defaultAutoMouseKeyCode(button)
     }
 
-    private let defaults: UserDefaults
+    private static let unparseableMessage =
+        "config.json is not valid JSON; keeping the current settings and not saving changes until it is fixed."
+
+    private let configFile: ConfigFile
+    /// Set while values from the file are being applied, so they are not
+    /// written straight back.
+    private var isApplyingConfig = false
+    private var isSaveScheduled = false
 
     @Published var isEnabled: Bool {
-        didSet { defaults.set(isEnabled, forKey: Keys.isEnabled) }
+        didSet { scheduleSave() }
     }
 
     @Published var scrollSensitivity: Double {
-        didSet { defaults.set(scrollSensitivity, forKey: Keys.scrollSensitivity) }
+        didSet { scheduleSave() }
     }
 
     @Published var zoomSensitivity: Double {
-        didSet { defaults.set(zoomSensitivity, forKey: Keys.zoomSensitivity) }
+        didSet { scheduleSave() }
     }
 
     @Published var naturalScrollDirection: Bool {
-        didSet { defaults.set(naturalScrollDirection, forKey: Keys.naturalScrollDirection) }
+        didSet { scheduleSave() }
     }
 
     @Published var momentumScrollingEnabled: Bool {
-        didSet { defaults.set(momentumScrollingEnabled, forKey: Keys.momentumScrollingEnabled) }
+        didSet { scheduleSave() }
     }
 
     /// 0...1. Higher = looser/longer momentum (a longer decay half-life).
     @Published var momentumStrength: Double {
-        didSet { defaults.set(momentumStrength, forKey: Keys.momentumStrength) }
+        didSet { scheduleSave() }
     }
 
     @Published var gestureDistance: Double {
-        didSet { defaults.set(gestureDistance, forKey: Keys.gestureDistance) }
+        didSet { scheduleSave() }
     }
 
     @Published var threeDSensitivity: Double {
-        didSet { defaults.set(threeDSensitivity, forKey: Keys.threeDSensitivity) }
+        didSet { scheduleSave() }
     }
 
     /// Used in every app without its own entry in `threeDAppProfiles`.
     @Published var threeDDefaultProfile: ThreeDProfile {
-        didSet { Self.store(threeDDefaultProfile, in: defaults, forKey: Keys.threeDDefaultProfile) }
+        didSet { scheduleSave() }
     }
 
     @Published var threeDAppProfiles: [ThreeDAppProfile] {
-        didSet { Self.store(threeDAppProfiles, in: defaults, forKey: Keys.threeDAppProfiles) }
+        didSet { scheduleSave() }
     }
 
     @Published var zoomMethod: ZoomMethod {
-        didSet { defaults.set(zoomMethod.rawValue, forKey: Keys.zoomMethod) }
+        didSet { scheduleSave() }
     }
 
     @Published private(set) var scrollTriggerKeyCode: Int64 {
-        didSet { defaults.set(scrollTriggerKeyCode, forKey: Keys.scrollTriggerKeyCode) }
+        didSet { scheduleSave() }
     }
 
     @Published private(set) var zoomTriggerKeyCode: Int64 {
-        didSet { defaults.set(zoomTriggerKeyCode, forKey: Keys.zoomTriggerKeyCode) }
+        didSet { scheduleSave() }
     }
 
     @Published private(set) var gestureTriggerKeyCode: Int64 {
-        didSet { defaults.set(gestureTriggerKeyCode, forKey: Keys.gestureTriggerKeyCode) }
+        didSet { scheduleSave() }
     }
 
     @Published private(set) var threeDTriggerKeyCodes: [ThreeDAction: Int64] {
-        didSet {
-            for (action, keyCode) in threeDTriggerKeyCodes {
-                defaults.set(keyCode, forKey: Keys.threeDTriggerKeyCode(action))
-            }
-        }
+        didSet { scheduleSave() }
     }
 
     @Published var autoMouseEnabled: Bool {
-        didSet { defaults.set(autoMouseEnabled, forKey: Keys.autoMouseEnabled) }
+        didSet { scheduleSave() }
     }
 
     /// The device whose movement turns the layer on; nil for any pointer.
     @Published var autoMouseDevice: PointingDeviceID? {
-        didSet {
-            if let autoMouseDevice {
-                Self.store(autoMouseDevice, in: defaults, forKey: Keys.autoMouseDevice)
-            } else {
-                defaults.removeObject(forKey: Keys.autoMouseDevice)
-            }
-        }
+        didSet { scheduleSave() }
     }
 
     /// Seconds the layer stays on after the pointer stops.
     @Published var autoMouseTimeout: Double {
-        didSet { defaults.set(autoMouseTimeout, forKey: Keys.autoMouseTimeout) }
+        didSet { scheduleSave() }
     }
 
     @Published private(set) var autoMouseKeyCodes: [AutoMouseButton: Int64] {
-        didSet {
-            for (button, keyCode) in autoMouseKeyCodes {
-                defaults.set(keyCode, forKey: Keys.autoMouseKeyCode(button))
-            }
-        }
+        didSet { scheduleSave() }
     }
 
     /// A second key per button, usually a modifier, for keyboards whose
     /// layer key sends a modifier when held (home row mods): the key itself
     /// arrives only when tapped, so holding it to drag needs the modifier.
     @Published private(set) var autoMouseHoldKeyCodes: [AutoMouseButton: Int64] {
-        didSet {
-            for button in AutoMouseButton.allCases {
-                if let keyCode = autoMouseHoldKeyCodes[button] {
-                    defaults.set(keyCode, forKey: Keys.autoMouseHoldKeyCode(button))
-                } else {
-                    defaults.removeObject(forKey: Keys.autoMouseHoldKeyCode(button))
-                }
-            }
-        }
+        didSet { scheduleSave() }
     }
+
+    /// Problems found in config.json by the last read or write, one per
+    /// line; nil when the file is fine.
+    @Published private(set) var configErrorMessage: String?
 
     /// Non-persisted UI state: which trigger key is currently being captured.
     @Published var captureTarget: KeyCaptureTarget?
     /// Non-persisted UI state: message shown when a capture attempt is rejected.
     @Published var captureErrorMessage: String?
 
+    /// `defaults` is only read, to carry settings from earlier versions into
+    /// a config file that does not exist yet.
     init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+        configFile = ConfigFile(url: Self.configFileURL)
 
-        isEnabled = defaults.object(forKey: Keys.isEnabled) as? Bool ?? true
-        scrollSensitivity = defaults.object(forKey: Keys.scrollSensitivity) as? Double ?? 1.0
-        zoomSensitivity = defaults.object(forKey: Keys.zoomSensitivity) as? Double ?? 1.0
-        naturalScrollDirection = defaults.object(forKey: Keys.naturalScrollDirection) as? Bool ?? true
-        momentumScrollingEnabled = defaults.object(forKey: Keys.momentumScrollingEnabled) as? Bool ?? true
-        momentumStrength = defaults.object(forKey: Keys.momentumStrength) as? Double ?? 0.5
-        gestureDistance = defaults.object(forKey: Keys.gestureDistance) as? Double ?? 50.0
-        threeDSensitivity = defaults.object(forKey: Keys.threeDSensitivity) as? Double ?? 1.0
-        threeDDefaultProfile = Self.load(ThreeDProfile.self, from: defaults, forKey: Keys.threeDDefaultProfile)
-            ?? .standard
-        threeDAppProfiles = Self.load([ThreeDAppProfile].self, from: defaults, forKey: Keys.threeDAppProfiles)
-            ?? []
-        zoomMethod = ZoomMethod(rawValue: defaults.string(forKey: Keys.zoomMethod) ?? "") ?? .pinch
-        scrollTriggerKeyCode = defaults.object(forKey: Keys.scrollTriggerKeyCode) as? Int64
-            ?? Self.defaultScrollTriggerKeyCode
-        zoomTriggerKeyCode = defaults.object(forKey: Keys.zoomTriggerKeyCode) as? Int64
-            ?? Self.defaultZoomTriggerKeyCode
-        gestureTriggerKeyCode = defaults.object(forKey: Keys.gestureTriggerKeyCode) as? Int64
-            ?? Self.defaultGestureTriggerKeyCode
-        var threeDKeys: [ThreeDAction: Int64] = [:]
-        for action in ThreeDAction.allCases {
-            threeDKeys[action] = defaults.object(forKey: Keys.threeDTriggerKeyCode(action)) as? Int64
-                ?? Self.defaultThreeDTriggerKeyCode(action)
+        let values: ConfigValues
+        var problems: [String] = []
+        var needsWrite = false
+        switch configFile.read() {
+        case .missing:
+            values = ConfigValues(migratingFrom: defaults)
+            needsWrite = true
+        case .unparseable:
+            // Nothing in memory yet; the last settings saved by an earlier
+            // version are the closest thing to "current".
+            values = ConfigValues(migratingFrom: defaults)
+            problems = [Self.unparseableMessage]
+        case .parsed(let raw):
+            values = ConfigValues(json: raw, problems: &problems)
         }
-        threeDTriggerKeyCodes = threeDKeys
-        autoMouseEnabled = defaults.object(forKey: Keys.autoMouseEnabled) as? Bool ?? false
-        autoMouseDevice = Self.load(PointingDeviceID.self, from: defaults, forKey: Keys.autoMouseDevice)
-        autoMouseTimeout = defaults.object(forKey: Keys.autoMouseTimeout) as? Double ?? 0.7
-        var autoMouseKeys: [AutoMouseButton: Int64] = [:]
-        for button in AutoMouseButton.allCases {
-            autoMouseKeys[button] = defaults.object(forKey: Keys.autoMouseKeyCode(button)) as? Int64
-                ?? Self.defaultAutoMouseKeyCode(button)
-        }
-        autoMouseKeyCodes = autoMouseKeys
-        var autoMouseHoldKeys: [AutoMouseButton: Int64] = [:]
-        for button in AutoMouseButton.allCases {
-            autoMouseHoldKeys[button] = defaults.object(forKey: Keys.autoMouseHoldKeyCode(button)) as? Int64
-        }
-        autoMouseHoldKeyCodes = autoMouseHoldKeys
+
+        isEnabled = values.isEnabled
+        scrollSensitivity = values.scrollSensitivity
+        zoomSensitivity = values.zoomSensitivity
+        naturalScrollDirection = values.naturalScrollDirection
+        momentumScrollingEnabled = values.momentumScrollingEnabled
+        momentumStrength = values.momentumStrength
+        gestureDistance = values.gestureDistance
+        threeDSensitivity = values.threeDSensitivity
+        threeDDefaultProfile = values.threeDDefaultProfile
+        threeDAppProfiles = values.threeDAppProfiles
+        zoomMethod = values.zoomMethod
+        scrollTriggerKeyCode = values.scrollTriggerKeyCode
+        zoomTriggerKeyCode = values.zoomTriggerKeyCode
+        gestureTriggerKeyCode = values.gestureTriggerKeyCode
+        threeDTriggerKeyCodes = values.threeDTriggerKeyCodes
+        autoMouseEnabled = values.autoMouseEnabled
+        autoMouseDevice = values.autoMouseDevice
+        autoMouseTimeout = values.autoMouseTimeout
+        autoMouseKeyCodes = values.autoMouseKeyCodes
+        autoMouseHoldKeyCodes = values.autoMouseHoldKeyCodes
+
+        setConfigProblems(problems)
+        if needsWrite { saveNow() }
+        configFile.startWatching { [weak self] in self?.reloadConfig() }
     }
+
+    // MARK: - Config file
+
+    private var currentValues: ConfigValues {
+        var values = ConfigValues()
+        values.isEnabled = isEnabled
+        values.scrollSensitivity = scrollSensitivity
+        values.zoomSensitivity = zoomSensitivity
+        values.naturalScrollDirection = naturalScrollDirection
+        values.momentumScrollingEnabled = momentumScrollingEnabled
+        values.momentumStrength = momentumStrength
+        values.gestureDistance = gestureDistance
+        values.threeDSensitivity = threeDSensitivity
+        values.threeDDefaultProfile = threeDDefaultProfile
+        values.threeDAppProfiles = threeDAppProfiles
+        values.zoomMethod = zoomMethod
+        values.scrollTriggerKeyCode = scrollTriggerKeyCode
+        values.zoomTriggerKeyCode = zoomTriggerKeyCode
+        values.gestureTriggerKeyCode = gestureTriggerKeyCode
+        values.threeDTriggerKeyCodes = threeDTriggerKeyCodes
+        values.autoMouseEnabled = autoMouseEnabled
+        values.autoMouseDevice = autoMouseDevice
+        values.autoMouseTimeout = autoMouseTimeout
+        values.autoMouseKeyCodes = autoMouseKeyCodes
+        values.autoMouseHoldKeyCodes = autoMouseHoldKeyCodes
+        return values
+    }
+
+    /// Assigns only what changed, so subscribers to one setting are not woken
+    /// by an edit to another.
+    private func apply(_ values: ConfigValues) {
+        isApplyingConfig = true
+        defer { isApplyingConfig = false }
+        if isEnabled != values.isEnabled { isEnabled = values.isEnabled }
+        if scrollSensitivity != values.scrollSensitivity { scrollSensitivity = values.scrollSensitivity }
+        if zoomSensitivity != values.zoomSensitivity { zoomSensitivity = values.zoomSensitivity }
+        if naturalScrollDirection != values.naturalScrollDirection {
+            naturalScrollDirection = values.naturalScrollDirection
+        }
+        if momentumScrollingEnabled != values.momentumScrollingEnabled {
+            momentumScrollingEnabled = values.momentumScrollingEnabled
+        }
+        if momentumStrength != values.momentumStrength { momentumStrength = values.momentumStrength }
+        if gestureDistance != values.gestureDistance { gestureDistance = values.gestureDistance }
+        if threeDSensitivity != values.threeDSensitivity { threeDSensitivity = values.threeDSensitivity }
+        if threeDDefaultProfile != values.threeDDefaultProfile { threeDDefaultProfile = values.threeDDefaultProfile }
+        if threeDAppProfiles != values.threeDAppProfiles { threeDAppProfiles = values.threeDAppProfiles }
+        if zoomMethod != values.zoomMethod { zoomMethod = values.zoomMethod }
+        if scrollTriggerKeyCode != values.scrollTriggerKeyCode { scrollTriggerKeyCode = values.scrollTriggerKeyCode }
+        if zoomTriggerKeyCode != values.zoomTriggerKeyCode { zoomTriggerKeyCode = values.zoomTriggerKeyCode }
+        if gestureTriggerKeyCode != values.gestureTriggerKeyCode { gestureTriggerKeyCode = values.gestureTriggerKeyCode }
+        if threeDTriggerKeyCodes != values.threeDTriggerKeyCodes { threeDTriggerKeyCodes = values.threeDTriggerKeyCodes }
+        if autoMouseEnabled != values.autoMouseEnabled { autoMouseEnabled = values.autoMouseEnabled }
+        if autoMouseDevice != values.autoMouseDevice { autoMouseDevice = values.autoMouseDevice }
+        if autoMouseTimeout != values.autoMouseTimeout { autoMouseTimeout = values.autoMouseTimeout }
+        if autoMouseKeyCodes != values.autoMouseKeyCodes { autoMouseKeyCodes = values.autoMouseKeyCodes }
+        if autoMouseHoldKeyCodes != values.autoMouseHoldKeyCodes { autoMouseHoldKeyCodes = values.autoMouseHoldKeyCodes }
+    }
+
+    /// Called when the file changed on disk. A file that stops parsing
+    /// mid-edit leaves the current settings alone, and a deleted file is
+    /// recreated by the next change made in the app.
+    private func reloadConfig() {
+        switch configFile.read() {
+        case .missing:
+            return
+        case .unparseable:
+            setConfigProblems([Self.unparseableMessage])
+        case .parsed(let raw):
+            var problems: [String] = []
+            apply(ConfigValues(json: raw, problems: &problems))
+            setConfigProblems(problems)
+        }
+    }
+
+    /// Writes once after a burst of changes (a dragged slider sets its value
+    /// many times a second) rather than on every change.
+    private func scheduleSave() {
+        guard !isApplyingConfig, !isSaveScheduled else { return }
+        isSaveScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            self?.saveNow()
+        }
+    }
+
+    private func saveNow() {
+        isSaveScheduled = false
+        // A successful write replaces every field the app owns with a valid
+        // value, so problems from the last read no longer apply.
+        setConfigProblems(configFile.write(currentValues.json()).map { [$0] } ?? [])
+    }
+
+    private func setConfigProblems(_ problems: [String]) {
+        let message = problems.isEmpty ? nil : problems.joined(separator: "\n")
+        guard message != configErrorMessage else { return }
+        configErrorMessage = message
+        for problem in problems { NSLog("BallGesture: %@ (%@)", problem, Self.configFileURL.path) }
+    }
+
+    // MARK: - Lookups
 
     func autoMouseKeyCode(for button: AutoMouseButton) -> Int64 {
         autoMouseKeyCodes[button] ?? Self.defaultAutoMouseKeyCode(button)
@@ -404,17 +466,6 @@ final class AppSettings: ObservableObject {
         guard !threeDAppProfiles.contains(where: { $0.bundleID == bundleID }) else { return }
         threeDAppProfiles.append(ThreeDAppProfile(bundleID: bundleID, profile: threeDDefaultProfile))
     }
-
-    private static func store<T: Encodable>(_ value: T, in defaults: UserDefaults, forKey key: String) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        defaults.set(data, forKey: key)
-    }
-
-    private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
-        guard let data = defaults.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
-    }
-
     /// Starts capturing the next pressed key for the given target.
     func beginCapture(for target: KeyCaptureTarget) {
         captureErrorMessage = nil
@@ -431,6 +482,13 @@ final class AppSettings: ObservableObject {
     @discardableResult
     func handleCapturedKeyCode(_ keyCode: Int64) -> Bool {
         guard let target = captureTarget else { return false }
+
+        // The config file stores keys by name, so a key without one could not be saved.
+        guard KeyCodeNaming.configName(for: keyCode) != nil else {
+            captureErrorMessage = "That key can't be assigned. Choose a different key."
+            captureTarget = nil
+            return true
+        }
 
         let assignedKeys: [(KeyCaptureTarget, Int64, String)] = [
             (.scrollTrigger, scrollTriggerKeyCode, "Scroll Mode"),
