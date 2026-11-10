@@ -14,20 +14,33 @@ struct SettingsPageScaffold<Content: View>: View {
     let page: SettingsPage
     @ViewBuilder var content: Content
 
+    @EnvironmentObject private var model: SettingsModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text(page.title)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Palette.brightWhite)
-                content
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text(page.title)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Palette.brightWhite)
+                    content
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 34)
+                .padding(.bottom, 28)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 34)
-            .padding(.bottom, 28)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollIndicators(.never)
+            .onChange(of: model.scrollTarget) { target in
+                guard let target else { return }
+                // Wait a turn, so a view added in the same change is laid out before scrolling to it.
+                DispatchQueue.main.async {
+                    withAnimation(Motion.selection(reduceMotion: reduceMotion)) { proxy.scrollTo(target) }
+                    model.scrollTarget = nil
+                }
+            }
         }
-        .scrollIndicators(.never)
     }
 }
 
