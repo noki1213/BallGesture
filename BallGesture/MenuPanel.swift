@@ -51,6 +51,10 @@ struct MenuPanelView: View {
 
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    // AppKit asks the window for these two values when it decides how to draw glass; the same
+    // answer in every focus state keeps the glass in its focused look.
+    @objc func hasKeyAppearance() -> Bool { true }
+    @objc func hasMainAppearance() -> Bool { true }
 }
 
 /// Shows the panel under the status item without activating the app, and closes it on Esc, on a

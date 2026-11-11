@@ -108,7 +108,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: SettingsView(model: model))
         hosting.sizingOptions = []
 
-        let window = NSWindow(contentViewController: hosting)
+        let window = GlassPinnedWindow(contentViewController: hosting)
         window.title = "BallGesture Settings"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
