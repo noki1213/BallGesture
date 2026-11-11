@@ -62,13 +62,6 @@ struct SteadyGlassBackground: View {
     }
 }
 
-/// A window whose glass keeps its focused look: AppKit asks the window for these two values when it
-/// decides how to draw glass, and gets the same answer in every focus state.
-final class GlassPinnedWindow: NSWindow {
-    @objc func hasKeyAppearance() -> Bool { true }
-    @objc func hasMainAppearance() -> Bool { true }
-}
-
 /// Liquid Glass tinted dark where the system has it, frosted blur under the same tint before that.
 /// The tint fixes how bright the ground is, so light text stays readable over any window behind.
 struct GlassBackground<S: Shape>: View {
