@@ -74,6 +74,10 @@ struct SettingsView: View {
             }
         }
         .contentShape(Rectangle())
+        .onHover { inside in
+            guard inside, model.page != page else { return }
+            model.select(page, animated: true)
+        }
         .onTapGesture { model.select(page, animated: true) }
     }
 
