@@ -115,7 +115,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.isOpaque = false
         window.backgroundColor = .clear
-        // The glass is always dark, so system controls take their dark-ground colours.
+        // The ground is always dark, so system controls take their dark-ground colours.
         window.appearance = NSAppearance(named: .darkAqua)
         window.minSize = NSSize(width: 640, height: 460)
         window.isReleasedWhenClosed = false
