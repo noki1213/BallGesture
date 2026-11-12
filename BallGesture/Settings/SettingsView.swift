@@ -29,15 +29,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 640, maxWidth: .infinity, minHeight: 460, maxHeight: .infinity)
-        .background(
-            // Blurs what is behind the window so desktop icons and other windows don't show through
-            // sharply under the text; the material stays active so the ground doesn't change with focus.
-            ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                Color.black.opacity(0.60)
-            }
-            .ignoresSafeArea()
-        )
+        .background(Color.black.ignoresSafeArea())
         .overlay { DropdownLayer(model: model) }
         .coordinateSpace(name: DropdownSpace.name)
         .environmentObject(model)

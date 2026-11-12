@@ -113,8 +113,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isOpaque = false
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = .black
         // The ground is always dark, so system controls take their dark-ground colours.
         window.appearance = NSAppearance(named: .darkAqua)
         window.minSize = NSSize(width: 640, height: 460)
