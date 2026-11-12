@@ -61,12 +61,12 @@ struct GlassBackground<S: Shape>: View {
             GlassEffectContainer {
                 shape
                     .fill(Color.clear)
-                    .glassEffect(.regular.tint(Palette.black.opacity(0.60)), in: shape)
+                    .glassEffect(.regular.tint(Color.black.opacity(0.50)), in: shape)
             }
         } else {
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                Palette.black.opacity(0.60)
+                Color.black.opacity(0.50)
             }
             .clipShape(shape)
         }
