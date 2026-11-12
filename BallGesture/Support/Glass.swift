@@ -17,7 +17,7 @@ enum Palette {
     static let brightWhite = Color(.sRGB, red: 0xfc / 255, green: 0xfc / 255, blue: 0xfa / 255, opacity: 1)
     /// Secondary text: the plain white faded, never the dark grey, which sinks into the glass.
     static let dimWhite = white.opacity(0.75)
-    static let hairline = Color.white.opacity(0.12)
+    static let hairline = Color.white.opacity(0.20)
     static let selection = green.opacity(0.30)
 }
 

@@ -220,7 +220,7 @@ struct KeyRecorderButton: View {
             .foregroundStyle(isRecording ? Palette.green : Palette.brightWhite)
             .lineLimit(1)
             .frame(width: 128, height: 26)
-            .overlay(shape.strokeBorder(isRecording ? Palette.green : Color.white.opacity(isHovered ? 0.30 : 0.16), lineWidth: 1))
+            .overlay(shape.strokeBorder(isRecording ? Palette.green : Color.white.opacity(isHovered ? 0.30 : 0.20), lineWidth: 1))
             .contentShape(shape)
             .onHover { isHovered = $0 }
             .onTapGesture {
@@ -326,7 +326,7 @@ struct DropdownButton: View {
         }
         .padding(.horizontal, 10)
         .frame(width: width, height: 26)
-        .overlay(shape.strokeBorder(Color.white.opacity(isHovered ? 0.30 : 0.16), lineWidth: 1))
+        .overlay(shape.strokeBorder(Color.white.opacity(isHovered ? 0.30 : 0.20), lineWidth: 1))
         .contentShape(shape)
         .onHover { isHovered = $0 }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(DropdownSpace.name)) } action: { frame = $0 }

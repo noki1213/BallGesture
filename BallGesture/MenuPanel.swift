@@ -36,7 +36,7 @@ struct MenuPanelView: View {
             .fixedSize(horizontal: false, vertical: true)
             .background(GlassBackground(shape: shape))
             .clipShape(shape)
-            .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            .overlay(shape.strokeBorder(Color.white.opacity(0.20), lineWidth: 1))
             .shadow(color: Color.black.opacity(0.35), radius: 20, x: 0, y: 10)
             .offset(y: reduceMotion ? 0 : (1 - state.materializeProgress) * -8)
             .scaleEffect(reduceMotion ? 1 : 0.94 + 0.06 * state.materializeProgress,
