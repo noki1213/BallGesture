@@ -108,7 +108,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: SettingsView(model: model))
         hosting.sizingOptions = []
 
-        let window = NSWindow(contentViewController: hosting)
+        let window = SteadyWindow(contentViewController: hosting)
         window.title = "BallGesture Settings"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
@@ -120,6 +120,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.minSize = NSSize(width: 640, height: 460)
         window.isReleasedWhenClosed = false
         window.delegate = self
+        window.observeFocus()
         window.setContentSize(NSSize(width: 720, height: 560))
         if !window.setFrameUsingName("Settings") {
             window.center()
