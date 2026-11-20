@@ -71,6 +71,7 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(Palette.selection)
                     .matchedGeometryEffect(id: "sidebarSelection", in: sidebarHighlight)
+                    .allowsHitTesting(false) // the sliding highlight passes over other rows and must not catch their hover
             }
         }
         .contentShape(Rectangle())
