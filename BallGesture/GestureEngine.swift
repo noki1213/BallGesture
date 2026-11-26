@@ -661,7 +661,7 @@ final class GestureEngine: ObservableObject {
     private func endScrollMode(reason: String) {
         scrollActive = false
         verifiableTriggerKeyCodes.remove(settings.scrollTriggerKeyCode)
-        reassociateCursor()
+        reassociateCursorUnlessPinned()
         if !momentumActive {
             // No flick was detected while the key was held, so this
             // release is the natural end of the drag gesture.
@@ -679,14 +679,14 @@ final class GestureEngine: ObservableObject {
         postZoomEvent(phase: .ended, magnification: 0)
         zoomActive = false
         verifiableTriggerKeyCodes.remove(settings.zoomTriggerKeyCode)
-        reassociateCursor()
+        reassociateCursorUnlessPinned()
         Self.logger.notice("Zoom Mode ENDED (\(reason, privacy: .public)).")
     }
 
     private func endGestureMode(reason: String) {
         gestureActive = false
         verifiableTriggerKeyCodes.remove(settings.gestureTriggerKeyCode)
-        reassociateCursor()
+        reassociateCursorUnlessPinned()
         Self.logger.notice("Gesture Mode ENDED (\(reason, privacy: .public)).")
     }
 
@@ -752,6 +752,14 @@ final class GestureEngine: ObservableObject {
         if lockedCursorPosition != nil, !pinsCursor {
             reassociateCursor()
             Self.logger.notice("Cursor was still pinned with no mode holding it; released.")
+        }
+    }
+
+    /// Releases the cursor when a mode ends, unless another active mode
+    /// still needs it pinned.
+    private func reassociateCursorUnlessPinned() {
+        if !pinsCursor {
+            reassociateCursor()
         }
     }
 
@@ -1192,7 +1200,7 @@ final class GestureEngine: ObservableObject {
             postShiftKey(down: false)
         }
         if !session.isDrag {
-            reassociateCursor()
+            reassociateCursorUnlessPinned()
         }
         CGWarpMouseCursorPosition(session.origin)
         Self.logger.notice("3D Mode ENDED (\(reason, privacy: .public)).")
