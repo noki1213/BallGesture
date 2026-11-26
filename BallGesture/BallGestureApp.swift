@@ -86,7 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opening the app again while it runs, from Finder or Spotlight, opens its window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        Task { @MainActor in SettingsWindowController.shared.show() }
+        Task { @MainActor in
+            self.menuPanel.hide()
+            SettingsWindowController.shared.show()
+        }
         return false
     }
 

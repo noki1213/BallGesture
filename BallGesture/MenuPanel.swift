@@ -67,6 +67,7 @@ final class MenuPanelController {
     private var hostingView: NSHostingView<MenuPanelView>!
     private var keyMonitor: Any?
     private var clickMonitor: Any?
+    private var localClickMonitor: Any?
     /// The status item's screen rect while shown, so a click back on the icon is left for its own
     /// action to toggle instead of being closed here and immediately reopened.
     private var statusItemFrame: NSRect = .zero
@@ -179,12 +180,21 @@ final class MenuPanelController {
             if self.statusItemFrame.contains(NSEvent.mouseLocation) { return }
             Task { @MainActor in self.hide() }
         }
+        // Global monitors never see clicks in this app's own windows, and the panel is non-activating.
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            guard let self, event.window !== self.panel else { return event }
+            if self.statusItemFrame.contains(NSEvent.mouseLocation) { return event }
+            self.hide()
+            return event
+        }
     }
 
     private func removeMonitors() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
         keyMonitor = nil
         clickMonitor = nil
+        localClickMonitor = nil
     }
 }
