@@ -67,8 +67,9 @@ final class ConfigFile {
 
     /// Writes `owned` into the file, merged into what is already there so keys
     /// the app does not know about (hand-added, or from a later version) are
-    /// kept. Objects merge key by key; any other value replaces the old one,
-    /// and `NSNull` removes the key. Returns a problem to show, or nil.
+    /// kept. Objects merge key by key; a list of objects merges entry by entry
+    /// (see `mergeList`); any other value replaces the old one, and `NSNull`
+    /// removes the key. Returns a problem to show, or nil.
     func write(_ owned: [String: Any]) -> String? {
         let target = resolvedURL
         var raw: [String: Any] = [:]
@@ -112,10 +113,35 @@ final class ConfigFile {
             } else if let ownedObject = value as? [String: Any],
                       let existingObject = existing[key] as? [String: Any] {
                 result[key] = merge(ownedObject, into: existingObject)
+            } else if let ownedList = value as? [Any], let existingList = existing[key] as? [Any],
+                      ownedList.contains(where: { $0 is [String: Any] }) {
+                result[key] = mergeList(ownedList, into: existingList)
             } else {
                 result[key] = value
             }
         }
+        return result
+    }
+
+    /// Merges a list of objects identified by "bundleID". Entries follow the
+    /// order of `owned`; each one keeps the keys the app does not know about
+    /// from the existing entry with the same ID. Existing entries with an ID
+    /// that `owned` lacks are dropped (that is how removal works), but entries
+    /// the reader skips (not an object, or no usable ID) are kept as the user
+    /// wrote them.
+    private static func mergeList(_ owned: [Any], into existing: [Any]) -> [Any] {
+        func identifier(_ element: Any) -> String? {
+            guard let id = (element as? [String: Any])?["bundleID"] as? String, !id.isEmpty else { return nil }
+            return id
+        }
+        var result: [Any] = owned.map { element in
+            guard let ownedObject = element as? [String: Any], let id = identifier(element),
+                  let match = existing.first(where: { identifier($0) == id }) as? [String: Any] else {
+                return element
+            }
+            return merge(ownedObject, into: match)
+        }
+        result.append(contentsOf: existing.filter { identifier($0) == nil })
         return result
     }
 
