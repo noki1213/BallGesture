@@ -133,7 +133,7 @@ Keyboards with home row mods send a modifier instead of the letter while J, K or
 
 The menu bar icon opens a small panel with the **Enabled** switch, the Accessibility status, **Settings…** and **Quit**. **Settings…** opens the settings window, which lists its pages on the left — General, Scroll, Zoom, Gesture, CAD and Mouse Layer — and shows the chosen page on the right. Changes apply as soon as they are made.
 
-To assign a key, click the key box and press the key. Press Esc or click the box again to cancel. Opening BallGesture again from Finder or Spotlight while it runs also opens the settings window, and so does its URL:
+To assign a key, click the key box and press the key. For a trigger key, hold modifiers while pressing it to assign a combination such as ⌘⇧X. Press Esc or click the box again to cancel. Opening BallGesture again from Finder or Spotlight while it runs also opens the settings window, and so does its URL:
 
 | URL | Opens |
 | --- | --- |
@@ -147,7 +147,7 @@ open ballgesture://settings/cad
 | Setting | Default | Range |
 | --- | --- | --- |
 | Enabled | On | — |
-| Trigger keys | F15 / F16 / F17, CAD: F18 / F19 / F20 | Any key; a key already in use cannot be reused |
+| Trigger keys | F15 / F16 / F17, CAD: F18 / F19 / F20 | Any key, optionally with modifiers; a key already in use cannot be reused |
 | Scroll sensitivity | 1.0 | 0.1 – 5.0 |
 | Natural scroll direction | On | — |
 | Momentum scrolling | On | — |
@@ -160,8 +160,8 @@ open ballgesture://settings/cad
 | Reverse Shift + Trackpad Scroll | Off | Per app |
 | Auto Mouse Layer | Off | — |
 | Auto Mouse Layer device | Any Pointer | Any Pointer or one connected device |
-| Auto Mouse Layer keys | Left: J, Right: K, Middle: L | Any key; a key already in use cannot be reused |
-| Auto Mouse Layer hold keys | None | Any key, including modifiers |
+| Auto Mouse Layer keys | Left: J, Right: K, Middle: L | Any key without modifiers; a key already in use cannot be reused |
+| Auto Mouse Layer hold keys | None | Any key without modifiers, including modifier keys such as Right Command |
 | Auto Mouse Layer time | 700 ms | 200 – 2000 ms |
 
 The panel and the General page show live Accessibility status: green when the event tap is running, yellow while waiting for permission and retrying, red when permission is denied.
@@ -170,7 +170,7 @@ The panel and the General page show live Accessibility status: green when the ev
 
 Settings are stored in `~/.config/ballgesture/config.json`, which can be edited by hand; saved edits apply within a second, without restarting. The file may be a symbolic link (for example into a dotfiles repository): BallGesture follows the link, writes to its target and leaves the link in place. Keys BallGesture does not know are kept when it writes. A value it cannot read falls back to its default, and the General page says which one; a file that is not valid JSON is never overwritten.
 
-Keys are written by name: `f15`, `j`, `space`, `right_cmd`, `left_option`, and so on. An unset hold key is `""`.
+Keys are written by name: `f15`, `j`, `space`, `right_cmd`, `left_option`, and so on. A trigger key can carry modifiers joined with `+`: `cmd+shift+x`, `ctrl+f13`. The modifiers are `ctrl`, `option`, `shift` and `cmd` (`control`, `opt`, `alt` and `command` also work), either side, in any order and any case. A bare trigger key such as `f15` works with any modifiers held, and when a combination and a bare key both match, the combination wins. A setting takes one key (`"f15"`), a list for several keys (`["f15", "cmd+f16"]`), or `""` for none. The Auto Mouse Layer keys and hold keys take bare keys only, without modifiers.
 
 ```json
 {
@@ -386,7 +386,7 @@ Shift を押しながらのトラックパッドの2本指スクロールで、�
 
 メニューバーのアイコンをクリックすると、**Enabled** のスイッチ・アクセシビリティの状態・**Settings…**・**Quit** だけの小さなパネルが開きます。**Settings…** で設定画面のウィンドウが開きます。左にページ（General・Scroll・Zoom・Gesture・CAD・Mouse Layer）が並び、選んだページの中身が右に出ます。変更はその場で効きます。
 
-キーを割り当てるときは、キーの枠をクリックしてから割り当てたいキーを押します。Esc か、枠をもう一度クリックすると取り消せます。起動中の BallGesture を Finder や Spotlight からもう一度開いたときと、次の URL でも設定画面が開きます。
+キーを割り当てるときは、キーの枠をクリックしてから割り当てたいキーを押します。トリガーキーは、修飾キーを押しながら押すと ⌘⇧X のような組み合わせを割り当てられます。Esc か、枠をもう一度クリックすると取り消せます。起動中の BallGesture を Finder や Spotlight からもう一度開いたときと、次の URL でも設定画面が開きます。
 
 | URL | 開くもの |
 | --- | --- |
@@ -400,7 +400,7 @@ open ballgesture://settings/cad
 | 設定 | 初期値 | 範囲 |
 | --- | --- | --- |
 | Enabled | オン | — |
-| トリガーキー | F15 / F16 / F17、CAD は F18 / F19 / F20 | 任意のキー。他のモードで使用中のキーは選択不可 |
+| トリガーキー | F15 / F16 / F17、CAD は F18 / F19 / F20 | 任意のキー（修飾キーとの組み合わせも可）。他のモードで使用中のキーは選択不可 |
 | スクロール感度 | 1.0 | 0.1 – 5.0 |
 | ナチュラルスクロール方向 | オン | — |
 | 慣性スクロール | オン | — |
@@ -413,8 +413,8 @@ open ballgesture://settings/cad
 | Reverse Shift + Trackpad Scroll | オフ | アプリごと |
 | Auto Mouse Layer | オフ | — |
 | Auto Mouse Layer の機器 | Any Pointer | Any Pointer か、つながっている1台 |
-| Auto Mouse Layer のキー | 左: J、右: K、中: L | 任意のキー。他で使用中のキーは選択不可 |
-| Auto Mouse Layer の長押しキー | なし | 修飾キーを含む任意のキー |
+| Auto Mouse Layer のキー | 左: J、右: K、中: L | 修飾キーなしの任意のキー。他で使用中のキーは選択不可 |
+| Auto Mouse Layer の長押しキー | なし | 修飾キーなしの任意のキー（右 Command などの修飾キー自体は可） |
 | Auto Mouse Layer の時間 | 700 ms | 200 – 2000 ms |
 
 パネルと General ページにはアクセシビリティの状態が出ます。緑はイベントタップ稼働中、黄は権限待ちで自動リトライ中、赤は未許可です。
@@ -423,7 +423,7 @@ open ballgesture://settings/cad
 
 設定は `~/.config/ballgesture/config.json` に保存されます。手で書き換えてもよく、保存すれば1秒以内に再起動なしで効きます。このファイルはシンボリックリンク（dotfiles のリポジトリへのリンクなど）でもかまいません。BallGesture はリンクをたどってリンク先に書き込み、リンクはそのまま残します。BallGesture が知らない項目は、書き込むときも残します。読めない値はその項目だけ初期値に戻し、どの項目かを General ページに出します。JSON として読めないファイルには書き込みません。
 
-キーは名前で書きます：`f15`・`j`・`space`・`right_cmd`・`left_option` など。長押しキーを外すときは `""` にします。項目の形は英語版の例を見てください。
+キーは名前で書きます：`f15`・`j`・`space`・`right_cmd`・`left_option` など。トリガーキーは `+` でつないで修飾キーを付けられます：`cmd+shift+x`・`ctrl+f13`。修飾キーは `ctrl`・`option`・`shift`・`cmd`（`control`・`opt`・`alt`・`command` も可）で、左右どちらでも、順序・大文字小文字は問いません。`f15` のように修飾キーなしで書いたトリガーキーは、どんな修飾キーを押していても効き、組み合わせと修飾キーなしの両方が当てはまるときは組み合わせが優先されます。1つの項目には、キー1つ（`"f15"`）、複数なら配列（`["f15", "cmd+f16"]`）、なしなら `""` を書きます。Auto Mouse Layer のキーと長押しキーは、修飾キーなしのキーだけ書けます。項目の形は英語版の例を見てください。
 
 ## セキュリティとプライバシー
 
