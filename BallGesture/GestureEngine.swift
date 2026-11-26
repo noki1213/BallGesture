@@ -375,9 +375,10 @@ final class GestureEngine: ObservableObject {
         tapStatus = .notStarted
     }
 
-    /// Safety net so the cursor is never left detached from the mouse and so
-    /// an in-progress pinch gesture is always closed out. Call this from the
-    /// app's termination handling.
+    /// Ends every active mode (scroll, zoom, gesture, 3D, momentum, layer) so
+    /// the cursor is never left detached from the mouse and an in-progress
+    /// pinch gesture is always closed out. Called at app termination and when
+    /// the app is turned off.
     func endActiveModesIfNeeded() {
         cancelFlickDetection()
         if scrollActive {
@@ -390,13 +391,13 @@ final class GestureEngine: ObservableObject {
             endGestureMode(reason: "modes ended")
         }
         if threeDSession != nil {
-            endThreeDMode(reason: "app terminating")
+            endThreeDMode(reason: "modes ended")
         }
         if momentumActive {
-            stopMomentum(reason: "app terminating")
+            stopMomentum(reason: "modes ended")
         }
         releaseLayerPresses()
-        exitAutoMouseLayer(reason: "app terminating")
+        exitAutoMouseLayer(reason: "modes ended")
         lockedCursorPosition = nil
         lastDeltaTrackingPosition = nil
     }
