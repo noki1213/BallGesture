@@ -141,6 +141,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        // The event tap swallows keys system-wide while a capture is armed, so a capture must not outlive key focus.
+        AppSettings.shared.cancelCapture()
         model.dropdown = nil
     }
 
