@@ -91,6 +91,11 @@ final class GestureEngine: ObservableObject {
     /// system is under heavy load, and events in that window bypass it) can
     /// be ended instead of turning ordinary pointer movement into scrolling.
     private var verifiableTriggerKeyCodes: Set<Int64> = []
+    /// The key that started each active mode. A mode ends on the release of
+    /// this key even if the assignment changed while it was held.
+    private var scrollKeyCode: Int64?
+    private var zoomKeyCode: Int64?
+    private var gestureKeyCode: Int64?
     private var keyUpWatchdogTimer: Timer?
 
     /// One hold of a 3D trigger key. The binding is resolved from the
@@ -577,58 +582,58 @@ final class GestureEngine: ObservableObject {
             return nil
         }
 
-        if keyCode == settings.scrollTriggerKeyCode {
-            if type == .keyDown, !scrollActive {
-                if momentumActive {
-                    stopMomentum(reason: "new Scroll Mode started")
-                }
-                cancelFlickDetection()
-                scrollActive = true
-                isFirstScrollEventOfDrag = true
-                resetScrollVelocityTracking()
-                disassociateCursor()
-                recordTriggerVerifiability(keyCode)
-                Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
-            } else if type == .keyUp, scrollActive {
-                endScrollMode(reason: "keyUp")
-            }
+        if type == .keyUp, endModesHeldBy(keyCode) {
+            return nil
+        }
+        // The release of a key whose press was swallowed, e.g. after the
+        // watchdog already ended its mode, must not reach other apps alone.
+        if type == .keyUp, swallowedKeyDowns.contains(keyCode) {
+            return nil
+        }
+        // Auto-repeat of the key that started a mode.
+        if type == .keyDown, isHoldingModeKey(keyCode) {
             return nil
         }
 
-        if keyCode == settings.zoomTriggerKeyCode {
-            if type == .keyDown, !zoomActive {
-                zoomActive = true
-                disassociateCursor()
-                recordTriggerVerifiability(keyCode)
-                postZoomEvent(phase: .began, magnification: 0)
-                Self.logger.notice("Zoom Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
-            } else if type == .keyUp, zoomActive {
-                endZoomMode(reason: "keyUp")
+        if type == .keyDown, keyCode == settings.scrollTriggerKeyCode {
+            if momentumActive {
+                stopMomentum(reason: "new Scroll Mode started")
             }
+            cancelFlickDetection()
+            scrollActive = true
+            scrollKeyCode = keyCode
+            isFirstScrollEventOfDrag = true
+            resetScrollVelocityTracking()
+            disassociateCursor()
+            recordTriggerVerifiability(keyCode)
+            Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             return nil
         }
 
-        if keyCode == settings.gestureTriggerKeyCode {
-            if type == .keyDown, !gestureActive {
-                gestureActive = true
-                gestureAccumulatedX = 0.0
-                gestureAccumulatedY = 0.0
-                hasTriggeredGesture = false
-                disassociateCursor()
-                recordTriggerVerifiability(keyCode)
-                Self.logger.notice("Gesture Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
-            } else if type == .keyUp, gestureActive {
-                endGestureMode(reason: "keyUp")
-            }
+        if type == .keyDown, keyCode == settings.zoomTriggerKeyCode {
+            zoomActive = true
+            zoomKeyCode = keyCode
+            disassociateCursor()
+            recordTriggerVerifiability(keyCode)
+            postZoomEvent(phase: .began, magnification: 0)
+            Self.logger.notice("Zoom Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
             return nil
         }
 
-        if let action = settings.threeDAction(forKeyCode: keyCode) {
-            if type == .keyDown, threeDSession?.action != action {
-                beginThreeDMode(action, keyCode: keyCode)
-            } else if type == .keyUp, threeDSession?.action == action {
-                endThreeDMode(reason: "keyUp")
-            }
+        if type == .keyDown, keyCode == settings.gestureTriggerKeyCode {
+            gestureActive = true
+            gestureKeyCode = keyCode
+            gestureAccumulatedX = 0.0
+            gestureAccumulatedY = 0.0
+            hasTriggeredGesture = false
+            disassociateCursor()
+            recordTriggerVerifiability(keyCode)
+            Self.logger.notice("Gesture Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
+            return nil
+        }
+
+        if type == .keyDown, let action = settings.threeDAction(forKeyCode: keyCode) {
+            beginThreeDMode(action, keyCode: keyCode)
             return nil
         }
 
@@ -644,9 +649,40 @@ final class GestureEngine: ObservableObject {
         return Unmanaged.passRetained(event)
     }
 
+    /// Whether `keyCode` started a mode that is still active.
+    private func isHoldingModeKey(_ keyCode: Int64) -> Bool {
+        (scrollActive && scrollKeyCode == keyCode)
+            || (zoomActive && zoomKeyCode == keyCode)
+            || (gestureActive && gestureKeyCode == keyCode)
+            || threeDSession?.keyCode == keyCode
+    }
+
+    /// Ends every active mode started by `keyCode`; true if there was one.
+    private func endModesHeldBy(_ keyCode: Int64) -> Bool {
+        var ended = false
+        if scrollActive, scrollKeyCode == keyCode {
+            endScrollMode(reason: "keyUp")
+            ended = true
+        }
+        if zoomActive, zoomKeyCode == keyCode {
+            endZoomMode(reason: "keyUp")
+            ended = true
+        }
+        if gestureActive, gestureKeyCode == keyCode {
+            endGestureMode(reason: "keyUp")
+            ended = true
+        }
+        if let session = threeDSession, session.keyCode == keyCode {
+            endThreeDMode(reason: "keyUp")
+            ended = true
+        }
+        return ended
+    }
+
     private func endScrollMode(reason: String) {
         scrollActive = false
-        verifiableTriggerKeyCodes.remove(settings.scrollTriggerKeyCode)
+        if let scrollKeyCode { verifiableTriggerKeyCodes.remove(scrollKeyCode) }
+        scrollKeyCode = nil
         reassociateCursorUnlessPinned()
         if !momentumActive {
             // No flick was detected while the key was held, so this
@@ -664,14 +700,16 @@ final class GestureEngine: ObservableObject {
     private func endZoomMode(reason: String) {
         postZoomEvent(phase: .ended, magnification: 0)
         zoomActive = false
-        verifiableTriggerKeyCodes.remove(settings.zoomTriggerKeyCode)
+        if let zoomKeyCode { verifiableTriggerKeyCodes.remove(zoomKeyCode) }
+        zoomKeyCode = nil
         reassociateCursorUnlessPinned()
         Self.logger.notice("Zoom Mode ENDED (\(reason, privacy: .public)).")
     }
 
     private func endGestureMode(reason: String) {
         gestureActive = false
-        verifiableTriggerKeyCodes.remove(settings.gestureTriggerKeyCode)
+        if let gestureKeyCode { verifiableTriggerKeyCodes.remove(gestureKeyCode) }
+        gestureKeyCode = nil
         reassociateCursorUnlessPinned()
         Self.logger.notice("Gesture Mode ENDED (\(reason, privacy: .public)).")
     }
@@ -716,15 +754,15 @@ final class GestureEngine: ObservableObject {
         func lost(_ keyCode: Int64) -> String? {
             lostKeyUpReason(keyCode, verifiable: verifiableTriggerKeyCodes.contains(keyCode), eventsWereMissed: eventsWereMissed)
         }
-        if scrollActive, let reason = lost(settings.scrollTriggerKeyCode) {
+        if scrollActive, let code = scrollKeyCode, let reason = lost(code) {
             cancelFlickDetection()
             resetScrollVelocityTracking()
             endScrollMode(reason: reason)
         }
-        if zoomActive, let reason = lost(settings.zoomTriggerKeyCode) {
+        if zoomActive, let code = zoomKeyCode, let reason = lost(code) {
             endZoomMode(reason: reason)
         }
-        if gestureActive, let reason = lost(settings.gestureTriggerKeyCode) {
+        if gestureActive, let code = gestureKeyCode, let reason = lost(code) {
             endGestureMode(reason: reason)
         }
         if let session = threeDSession, let reason = lost(session.keyCode) {
