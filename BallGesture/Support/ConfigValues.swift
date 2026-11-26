@@ -185,8 +185,8 @@ struct ConfigValues: Equatable {
         autoMouseDevice = reader.device(mouseLayer, "device", path: "mouseLayer.device")
         autoMouseTimeout = reader.number(
             mouseLayer, "stayOnSeconds", path: "mouseLayer.stayOnSeconds", default: autoMouseTimeout,
-            requirement: "a number of 0 or more"
-        ) { $0 >= 0 }
+            requirement: "a number from 0 to 60"
+        ) { (0...60).contains($0) }
         let mouseKeys = reader.object(mouseLayer, "keys", path: "mouseLayer.keys")
         let holdKeys = reader.object(mouseLayer, "holdKeys", path: "mouseLayer.holdKeys")
         for button in AutoMouseButton.allCases {
@@ -344,7 +344,11 @@ private struct FieldReader {
     }
 
     mutating func positive(_ object: [String: Any]?, _ key: String, path: String, default fallback: Double) -> Double {
-        number(object, key, path: path, default: fallback, requirement: "a number above 0") { $0 > 0 }
+        // The upper bound keeps hand-edited values within what Int32 conversions
+        // and JSON number encoding can represent.
+        number(object, key, path: path, default: fallback, requirement: "a number above 0 and at most 1000") {
+            $0 > 0 && $0 <= 1000
+        }
     }
 
     mutating func choice<T: RawRepresentable & CaseIterable>(
