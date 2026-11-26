@@ -10,41 +10,44 @@ import Carbon.HIToolbox
 import Foundation
 
 struct ConfigValues: Equatable {
-    static let defaultScrollTriggerKeyCode = Int64(kVK_F15)
-    static let defaultZoomTriggerKeyCode = Int64(kVK_F16)
-    static let defaultGestureTriggerKeyCode = Int64(kVK_F17)
-    static func defaultThreeDTriggerKeyCode(_ action: ThreeDAction) -> Int64 {
+    private static func bare(_ keyCode: Int) -> [KeyBinding] {
+        [KeyBinding(keyCode: Int64(keyCode))]
+    }
+    static let defaultScrollTriggers = bare(kVK_F15)
+    static let defaultZoomTriggers = bare(kVK_F16)
+    static let defaultGestureTriggers = bare(kVK_F17)
+    static func defaultThreeDTriggers(_ action: ThreeDAction) -> [KeyBinding] {
         switch action {
-        case .pan: return Int64(kVK_F18)
-        case .zoom: return Int64(kVK_F19)
-        case .rotate: return Int64(kVK_F20)
+        case .pan: return bare(kVK_F18)
+        case .zoom: return bare(kVK_F19)
+        case .rotate: return bare(kVK_F20)
         }
     }
-    static func defaultAutoMouseKeyCode(_ button: AutoMouseButton) -> Int64 {
+    static func defaultAutoMouseKeys(_ button: AutoMouseButton) -> [KeyBinding] {
         switch button {
-        case .left: return Int64(kVK_ANSI_J)
-        case .right: return Int64(kVK_ANSI_K)
-        case .middle: return Int64(kVK_ANSI_L)
+        case .left: return bare(kVK_ANSI_J)
+        case .right: return bare(kVK_ANSI_K)
+        case .middle: return bare(kVK_ANSI_L)
         }
     }
 
     var isEnabled = true
 
-    var scrollTriggerKeyCode = defaultScrollTriggerKeyCode
+    var scrollTriggers = defaultScrollTriggers
     var naturalScrollDirection = true
     var scrollSensitivity = 1.0
     var momentumScrollingEnabled = true
     var momentumStrength = 0.5
 
-    var zoomTriggerKeyCode = defaultZoomTriggerKeyCode
+    var zoomTriggers = defaultZoomTriggers
     var zoomMethod = ZoomMethod.pinch
     var zoomSensitivity = 1.0
 
-    var gestureTriggerKeyCode = defaultGestureTriggerKeyCode
+    var gestureTriggers = defaultGestureTriggers
     var gestureDistance = 50.0
 
-    var threeDTriggerKeyCodes = Dictionary(
-        uniqueKeysWithValues: ThreeDAction.allCases.map { ($0, defaultThreeDTriggerKeyCode($0)) }
+    var threeDTriggers = Dictionary(
+        uniqueKeysWithValues: ThreeDAction.allCases.map { ($0, defaultThreeDTriggers($0)) }
     )
     var threeDSensitivity = 1.0
     var threeDDefaultProfile = ThreeDProfile.standard
@@ -53,10 +56,10 @@ struct ConfigValues: Equatable {
     var autoMouseEnabled = false
     var autoMouseDevice: PointingDeviceID?
     var autoMouseTimeout = 0.7
-    var autoMouseKeyCodes = Dictionary(
-        uniqueKeysWithValues: AutoMouseButton.allCases.map { ($0, defaultAutoMouseKeyCode($0)) }
+    var autoMouseKeys = Dictionary(
+        uniqueKeysWithValues: AutoMouseButton.allCases.map { ($0, defaultAutoMouseKeys($0)) }
     )
-    var autoMouseHoldKeyCodes: [AutoMouseButton: Int64] = [:]
+    var autoMouseHoldKeys: [AutoMouseButton: [KeyBinding]] = [:]
 
     init() {}
 
@@ -65,8 +68,8 @@ struct ConfigValues: Equatable {
     /// The file's contents for these values. `NSNull` marks a key to remove,
     /// so an unset device disappears from the file instead of lingering.
     func json() -> [String: Any] {
-        func keyName(_ keyCode: Int64?) -> String {
-            keyCode.flatMap(KeyCodeNaming.configName(for:)) ?? ""
+        func keyValue(_ bindings: [KeyBinding]?) -> Any {
+            KeyBinding.configValue(of: bindings ?? [])
         }
         func binding(_ binding: ThreeDBinding) -> [String: Any] {
             ["output": binding.output.rawValue, "reversed": binding.reversed]
@@ -90,24 +93,24 @@ struct ConfigValues: Equatable {
         return [
             "enabled": isEnabled,
             "scroll": [
-                "trigger": keyName(scrollTriggerKeyCode),
+                "trigger": keyValue(scrollTriggers),
                 "naturalDirection": naturalScrollDirection,
                 "sensitivity": number(scrollSensitivity),
                 "momentum": momentumScrollingEnabled,
                 "momentumStrength": number(momentumStrength)
             ] as [String: Any],
             "zoom": [
-                "trigger": keyName(zoomTriggerKeyCode),
+                "trigger": keyValue(zoomTriggers),
                 "method": zoomMethod.rawValue,
                 "sensitivity": number(zoomSensitivity)
             ] as [String: Any],
             "gesture": [
-                "trigger": keyName(gestureTriggerKeyCode),
+                "trigger": keyValue(gestureTriggers),
                 "distance": number(gestureDistance)
             ] as [String: Any],
             "cad": [
-                "keys": Dictionary(uniqueKeysWithValues: ThreeDAction.allCases.map {
-                    ($0.rawValue, keyName(threeDTriggerKeyCodes[$0]))
+                "keys": Dictionary(uniqueKeysWithValues: ThreeDAction.allCases.map { action -> (String, Any) in
+                    (action.rawValue, keyValue(threeDTriggers[action]))
                 }),
                 "sensitivity": number(threeDSensitivity),
                 "default": profile(threeDDefaultProfile),
@@ -123,10 +126,10 @@ struct ConfigValues: Equatable {
                 "device": device,
                 "stayOnSeconds": number(autoMouseTimeout),
                 "keys": Dictionary(uniqueKeysWithValues: AutoMouseButton.allCases.map {
-                    ($0.rawValue, keyName(autoMouseKeyCodes[$0]))
+                    ($0.rawValue, keyValue(autoMouseKeys[$0]))
                 }),
                 "holdKeys": Dictionary(uniqueKeysWithValues: AutoMouseButton.allCases.map {
-                    ($0.rawValue, keyName(autoMouseHoldKeyCodes[$0]))
+                    ($0.rawValue, keyValue(autoMouseHoldKeys[$0]))
                 })
             ] as [String: Any]
         ]
@@ -144,7 +147,9 @@ struct ConfigValues: Equatable {
         isEnabled = reader.bool(raw, "enabled", path: "enabled", default: isEnabled)
 
         let scroll = reader.object(raw, "scroll", path: "scroll")
-        scrollTriggerKeyCode = reader.key(scroll, "trigger", path: "scroll.trigger", default: scrollTriggerKeyCode)
+        scrollTriggers = reader.bindings(
+            scroll, "trigger", path: "scroll.trigger", default: scrollTriggers, allowModifiers: true, allowEmpty: true
+        )
         naturalScrollDirection = reader.bool(
             scroll, "naturalDirection", path: "scroll.naturalDirection", default: naturalScrollDirection
         )
@@ -158,20 +163,24 @@ struct ConfigValues: Equatable {
         ) { (0...1).contains($0) }
 
         let zoom = reader.object(raw, "zoom", path: "zoom")
-        zoomTriggerKeyCode = reader.key(zoom, "trigger", path: "zoom.trigger", default: zoomTriggerKeyCode)
+        zoomTriggers = reader.bindings(
+            zoom, "trigger", path: "zoom.trigger", default: zoomTriggers, allowModifiers: true, allowEmpty: true
+        )
         zoomMethod = reader.choice(zoom, "method", path: "zoom.method", default: zoomMethod)
         zoomSensitivity = reader.positive(zoom, "sensitivity", path: "zoom.sensitivity", default: zoomSensitivity)
 
         let gesture = reader.object(raw, "gesture", path: "gesture")
-        gestureTriggerKeyCode = reader.key(gesture, "trigger", path: "gesture.trigger", default: gestureTriggerKeyCode)
+        gestureTriggers = reader.bindings(
+            gesture, "trigger", path: "gesture.trigger", default: gestureTriggers, allowModifiers: true, allowEmpty: true
+        )
         gestureDistance = reader.positive(gesture, "distance", path: "gesture.distance", default: gestureDistance)
 
         let cad = reader.object(raw, "cad", path: "cad")
         let cadKeys = reader.object(cad, "keys", path: "cad.keys")
         for action in ThreeDAction.allCases {
-            threeDTriggerKeyCodes[action] = reader.key(
+            threeDTriggers[action] = reader.bindings(
                 cadKeys, action.rawValue, path: "cad.keys.\(action.rawValue)",
-                default: Self.defaultThreeDTriggerKeyCode(action)
+                default: Self.defaultThreeDTriggers(action), allowModifiers: true, allowEmpty: true
             )
         }
         threeDSensitivity = reader.positive(cad, "sensitivity", path: "cad.sensitivity", default: threeDSensitivity)
@@ -190,12 +199,13 @@ struct ConfigValues: Equatable {
         let mouseKeys = reader.object(mouseLayer, "keys", path: "mouseLayer.keys")
         let holdKeys = reader.object(mouseLayer, "holdKeys", path: "mouseLayer.holdKeys")
         for button in AutoMouseButton.allCases {
-            autoMouseKeyCodes[button] = reader.key(
+            autoMouseKeys[button] = reader.bindings(
                 mouseKeys, button.rawValue, path: "mouseLayer.keys.\(button.rawValue)",
-                default: Self.defaultAutoMouseKeyCode(button)
+                default: Self.defaultAutoMouseKeys(button), allowModifiers: false, allowEmpty: false
             )
-            autoMouseHoldKeyCodes[button] = reader.optionalKey(
-                holdKeys, button.rawValue, path: "mouseLayer.holdKeys.\(button.rawValue)"
+            autoMouseHoldKeys[button] = reader.bindings(
+                holdKeys, button.rawValue, path: "mouseLayer.holdKeys.\(button.rawValue)",
+                default: [], allowModifiers: false, allowEmpty: true
             )
         }
     }
@@ -238,10 +248,10 @@ struct ConfigValues: Equatable {
         func value<T>(_ key: String, _ type: T.Type) -> T? {
             defaults.object(forKey: key) as? T
         }
-        func key(_ legacyKey: String) -> Int64? {
+        func key(_ legacyKey: String) -> [KeyBinding]? {
             guard let keyCode = value(legacyKey, Int64.self),
                   KeyCodeNaming.configName(for: keyCode) != nil else { return nil }
-            return keyCode
+            return [KeyBinding(keyCode: keyCode)]
         }
         func decoded<T: Decodable>(_ type: T.Type, _ legacyKey: String) -> T? {
             guard let data = defaults.data(forKey: legacyKey) else { return nil }
@@ -259,22 +269,22 @@ struct ConfigValues: Equatable {
         threeDDefaultProfile = decoded(ThreeDProfile.self, LegacyKeys.threeDDefaultProfile) ?? threeDDefaultProfile
         threeDAppProfiles = decoded([ThreeDAppProfile].self, LegacyKeys.threeDAppProfiles) ?? threeDAppProfiles
         zoomMethod = value(LegacyKeys.zoomMethod, String.self).flatMap(ZoomMethod.init(rawValue:)) ?? zoomMethod
-        scrollTriggerKeyCode = key(LegacyKeys.scrollTriggerKeyCode) ?? scrollTriggerKeyCode
-        zoomTriggerKeyCode = key(LegacyKeys.zoomTriggerKeyCode) ?? zoomTriggerKeyCode
-        gestureTriggerKeyCode = key(LegacyKeys.gestureTriggerKeyCode) ?? gestureTriggerKeyCode
+        scrollTriggers = key(LegacyKeys.scrollTriggerKeyCode) ?? scrollTriggers
+        zoomTriggers = key(LegacyKeys.zoomTriggerKeyCode) ?? zoomTriggers
+        gestureTriggers = key(LegacyKeys.gestureTriggerKeyCode) ?? gestureTriggers
         for action in ThreeDAction.allCases {
-            if let keyCode = key(LegacyKeys.threeDTriggerKeyCode(action)) {
-                threeDTriggerKeyCodes[action] = keyCode
+            if let keys = key(LegacyKeys.threeDTriggerKeyCode(action)) {
+                threeDTriggers[action] = keys
             }
         }
         autoMouseEnabled = value(LegacyKeys.autoMouseEnabled, Bool.self) ?? autoMouseEnabled
         autoMouseDevice = decoded(PointingDeviceID.self, LegacyKeys.autoMouseDevice)
         autoMouseTimeout = value(LegacyKeys.autoMouseTimeout, Double.self) ?? autoMouseTimeout
         for button in AutoMouseButton.allCases {
-            if let keyCode = key(LegacyKeys.autoMouseKeyCode(button)) {
-                autoMouseKeyCodes[button] = keyCode
+            if let keys = key(LegacyKeys.autoMouseKeyCode(button)) {
+                autoMouseKeys[button] = keys
             }
-            autoMouseHoldKeyCodes[button] = key(LegacyKeys.autoMouseHoldKeyCode(button))
+            autoMouseHoldKeys[button] = key(LegacyKeys.autoMouseHoldKeyCode(button)) ?? []
         }
     }
 }
@@ -363,24 +373,67 @@ private struct FieldReader {
         return choice
     }
 
-    mutating func key(_ object: [String: Any]?, _ key: String, path: String, default fallback: Int64) -> Int64 {
+    /// A key setting: "" for none, one binding as a string, or several as a
+    /// list. A bad list entry is skipped; a bad single value, or a list left
+    /// with nothing usable, takes the default.
+    mutating func bindings(
+        _ object: [String: Any]?, _ key: String, path: String, default fallback: [KeyBinding],
+        allowModifiers: Bool, allowEmpty: Bool
+    ) -> [KeyBinding] {
         guard let value = field(object, key) else { return fallback }
-        guard let name = value as? String, let keyCode = KeyCodeNaming.keyCode(forConfigName: name) else {
-            report("\(path) \(Self.describe(value)) is not a key name; using \(KeyCodeNaming.displayName(for: fallback)).")
+        let fallbackName = fallback.isEmpty ? "none" : KeyBinding.displayName(of: fallback)
+
+        func parse(_ item: Any, itemPath: String, outcome: String) -> KeyBinding? {
+            guard let text = item as? String else {
+                report("\(itemPath) \(Self.describe(item)) is not a key name; \(outcome).")
+                return nil
+            }
+            switch KeyBinding.parse(text) {
+            case .failure(.notAKey):
+                let hint = allowModifiers ? " or a key with modifiers like \"cmd+shift+x\"" : ""
+                report("\(itemPath) \(Self.describe(item)) is not a key name\(hint); \(outcome).")
+                return nil
+            case .failure(.modifierOnModifierKey):
+                report("\(itemPath) \(Self.describe(item)) puts a modifier on a modifier key; \(outcome).")
+                return nil
+            case .success(let binding):
+                if !allowModifiers, !binding.modifiers.isEmpty {
+                    report("\(itemPath) \(Self.describe(item)) must be a single key without modifiers; \(outcome).")
+                    return nil
+                }
+                return binding
+            }
+        }
+
+        if let text = value as? String {
+            if text.trimmingCharacters(in: .whitespaces).isEmpty {
+                guard allowEmpty else {
+                    report("\(path) \"\" is not a key name; using \(fallbackName).")
+                    return fallback
+                }
+                return []
+            }
+            guard let binding = parse(value, itemPath: path, outcome: "using \(fallbackName)") else {
+                return fallback
+            }
+            return [binding]
+        }
+
+        guard let items = value as? [Any] else {
+            report("\(path) must be a key name or a list of key names; using \(fallbackName).")
             return fallback
         }
-        return keyCode
-    }
-
-    /// A key that may be left unassigned with "".
-    mutating func optionalKey(_ object: [String: Any]?, _ key: String, path: String) -> Int64? {
-        guard let value = field(object, key) else { return nil }
-        if let name = value as? String, name.trimmingCharacters(in: .whitespaces).isEmpty { return nil }
-        guard let name = value as? String, let keyCode = KeyCodeNaming.keyCode(forConfigName: name) else {
-            report("\(path) \(Self.describe(value)) is not a key name; leaving it unassigned.")
-            return nil
+        var result: [KeyBinding] = []
+        for (index, item) in items.enumerated() {
+            if let binding = parse(item, itemPath: "\(path)[\(index)]", outcome: "skipping it"), !result.contains(binding) {
+                result.append(binding)
+            }
         }
-        return keyCode
+        if result.isEmpty, !(items.isEmpty && allowEmpty) {
+            report("\(path) has no usable key; using \(fallbackName).")
+            return fallback
+        }
+        return result
     }
 
     mutating func device(_ object: [String: Any]?, _ key: String, path: String) -> PointingDeviceID? {

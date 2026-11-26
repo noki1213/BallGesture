@@ -133,7 +133,7 @@ struct ScrollSettingsPage: View {
                 KeyRow(
                     title: "Trigger Key",
                     target: .scrollTrigger,
-                    keyName: KeyCodeNaming.displayName(for: settings.scrollTriggerKeyCode)
+                    keyName: KeyBinding.displayName(of: settings.scrollTriggers)
                 )
             }
             SettingsGroup {
@@ -163,7 +163,7 @@ struct ZoomSettingsPage: View {
                 KeyRow(
                     title: "Trigger Key",
                     target: .zoomTrigger,
-                    keyName: KeyCodeNaming.displayName(for: settings.zoomTriggerKeyCode)
+                    keyName: KeyBinding.displayName(of: settings.zoomTriggers)
                 )
             }
             SettingsGroup {
@@ -192,7 +192,7 @@ struct GestureSettingsPage: View {
                 KeyRow(
                     title: "Trigger Key",
                     target: .gestureTrigger,
-                    keyName: KeyCodeNaming.displayName(for: settings.gestureTriggerKeyCode)
+                    keyName: KeyBinding.displayName(of: settings.gestureTriggers)
                 )
             }
             SettingsGroup {
@@ -220,7 +220,7 @@ struct CADSettingsPage: View {
                     KeyRow(
                         title: action.displayName,
                         target: .threeDTrigger(action),
-                        keyName: KeyCodeNaming.displayName(for: settings.threeDTriggerKeyCode(for: action))
+                        keyName: KeyBinding.displayName(of: settings.threeDTriggers(for: action))
                     )
                 }
                 SettingsDivider()
@@ -295,7 +295,7 @@ struct CADSettingsPage: View {
         let binding = profile.wrappedValue[action]
         return SettingsRow(
             title: action.displayName,
-            subtitle: KeyCodeNaming.displayName(for: settings.threeDTriggerKeyCode(for: action))
+            subtitle: KeyBinding.displayName(of: settings.threeDTriggers(for: action))
         ) {
             HStack(spacing: 12) {
                 DropdownButton(
@@ -492,7 +492,7 @@ struct MouseLayerSettingsPage: View {
                         KeyRow(
                             title: button.displayName,
                             target: .autoMouseButton(button),
-                            keyName: KeyCodeNaming.displayName(for: settings.autoMouseKeyCode(for: button))
+                            keyName: KeyBinding.displayName(of: settings.autoMouseKeys(for: button))
                         )
                     }
                 }
@@ -503,12 +503,12 @@ struct MouseLayerSettingsPage: View {
                 ) {
                     ForEach(Array(AutoMouseButton.allCases.enumerated()), id: \.element) { index, button in
                         if index > 0 { SettingsDivider() }
-                        let keyCode = settings.autoMouseHoldKeyCodes[button]
+                        let holdKeys = settings.autoMouseHoldKeys[button] ?? []
                         KeyRow(
                             title: button.displayName,
                             target: .autoMouseHoldKey(button),
-                            keyName: keyCode.map(KeyCodeNaming.displayName(for:)) ?? "None",
-                            onClear: keyCode == nil ? nil : { settings.clearAutoMouseHoldKey(for: button) }
+                            keyName: KeyBinding.displayName(of: holdKeys),
+                            onClear: holdKeys.isEmpty ? nil : { settings.clearAutoMouseHoldKey(for: button) }
                         )
                     }
                 }

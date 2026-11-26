@@ -351,9 +351,7 @@ final class GestureEngine: ObservableObject {
     /// Posts a keyUp for every trigger key, so a press the system saw before
     /// the tap existed (or while it was off) does not stay held.
     private func releaseTriggerKeys() {
-        let keyCodes = [settings.scrollTriggerKeyCode, settings.zoomTriggerKeyCode, settings.gestureTriggerKeyCode]
-            + ThreeDAction.allCases.map { settings.threeDTriggerKeyCode(for: $0) }
-        for keyCode in Set(keyCodes) {
+        for keyCode in settings.triggerKeyCodes {
             CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: false)?.post(tap: .cghidEventTap)
         }
     }
@@ -552,7 +550,7 @@ final class GestureEngine: ObservableObject {
                 return nil
             }
             if type == .keyDown {
-                if settings.handleCapturedKeyCode(keyCode) {
+                if settings.handleCapturedKeyCode(keyCode, modifiers: Self.heldModifiers(of: event)) {
                     Self.logger.notice("Captured keyCode=\(keyCode, privacy: .public) for trigger key assignment.")
                     pendingCaptureSwallowKeyCode = keyCode
                     return nil
@@ -595,45 +593,42 @@ final class GestureEngine: ObservableObject {
             return nil
         }
 
-        if type == .keyDown, keyCode == settings.scrollTriggerKeyCode {
-            if momentumActive {
-                stopMomentum(reason: "new Scroll Mode started")
+        if type == .keyDown,
+           let action = settings.triggerAction(forKeyCode: keyCode, modifiers: Self.heldModifiers(of: event)) {
+            switch action {
+            case .scroll where !scrollActive:
+                if momentumActive {
+                    stopMomentum(reason: "new Scroll Mode started")
+                }
+                cancelFlickDetection()
+                scrollActive = true
+                scrollKeyCode = keyCode
+                isFirstScrollEventOfDrag = true
+                resetScrollVelocityTracking()
+                disassociateCursor()
+                recordTriggerVerifiability(keyCode)
+                Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
+            case .zoom where !zoomActive:
+                zoomActive = true
+                zoomKeyCode = keyCode
+                disassociateCursor()
+                recordTriggerVerifiability(keyCode)
+                postZoomEvent(phase: .began, magnification: 0)
+                Self.logger.notice("Zoom Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
+            case .gesture where !gestureActive:
+                gestureActive = true
+                gestureKeyCode = keyCode
+                gestureAccumulatedX = 0.0
+                gestureAccumulatedY = 0.0
+                hasTriggeredGesture = false
+                disassociateCursor()
+                recordTriggerVerifiability(keyCode)
+                Self.logger.notice("Gesture Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
+            case .threeD(let threeDAction) where threeDSession?.action != threeDAction:
+                beginThreeDMode(threeDAction, keyCode: keyCode)
+            default:
+                break
             }
-            cancelFlickDetection()
-            scrollActive = true
-            scrollKeyCode = keyCode
-            isFirstScrollEventOfDrag = true
-            resetScrollVelocityTracking()
-            disassociateCursor()
-            recordTriggerVerifiability(keyCode)
-            Self.logger.notice("Scroll Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
-            return nil
-        }
-
-        if type == .keyDown, keyCode == settings.zoomTriggerKeyCode {
-            zoomActive = true
-            zoomKeyCode = keyCode
-            disassociateCursor()
-            recordTriggerVerifiability(keyCode)
-            postZoomEvent(phase: .began, magnification: 0)
-            Self.logger.notice("Zoom Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
-            return nil
-        }
-
-        if type == .keyDown, keyCode == settings.gestureTriggerKeyCode {
-            gestureActive = true
-            gestureKeyCode = keyCode
-            gestureAccumulatedX = 0.0
-            gestureAccumulatedY = 0.0
-            hasTriggeredGesture = false
-            disassociateCursor()
-            recordTriggerVerifiability(keyCode)
-            Self.logger.notice("Gesture Mode STARTED (keyCode=\(keyCode, privacy: .public)).")
-            return nil
-        }
-
-        if type == .keyDown, let action = settings.threeDAction(forKeyCode: keyCode) {
-            beginThreeDMode(action, keyCode: keyCode)
             return nil
         }
 
@@ -677,6 +672,15 @@ final class GestureEngine: ObservableObject {
             ended = true
         }
         return ended
+    }
+
+    private static func heldModifiers(of event: CGEvent) -> KeyBinding.Modifiers {
+        var modifiers: KeyBinding.Modifiers = []
+        if event.flags.contains(.maskControl) { modifiers.insert(.control) }
+        if event.flags.contains(.maskAlternate) { modifiers.insert(.option) }
+        if event.flags.contains(.maskShift) { modifiers.insert(.shift) }
+        if event.flags.contains(.maskCommand) { modifiers.insert(.command) }
+        return modifiers
     }
 
     private func endScrollMode(reason: String) {

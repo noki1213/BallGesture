@@ -219,7 +219,10 @@ struct KeyRecorderButton: View {
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(isRecording ? Palette.green : Palette.brightWhite)
             .lineLimit(1)
-            .frame(width: 128, height: 26)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 8)
+            .frame(minWidth: 128, maxWidth: 220, minHeight: 26, maxHeight: 26)
+            .fixedSize()
             .overlay(shape.strokeBorder(isRecording ? Palette.green : Color.white.opacity(isHovered ? 0.30 : 0.20), lineWidth: 1))
             .contentShape(shape)
             .onHover { isHovered = $0 }

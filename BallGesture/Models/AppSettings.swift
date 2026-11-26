@@ -155,6 +155,22 @@ enum KeyCaptureTarget: Equatable {
     case threeDTrigger(ThreeDAction)
     case autoMouseButton(AutoMouseButton)
     case autoMouseHoldKey(AutoMouseButton)
+
+    /// Triggers can be recorded with modifiers; layer and hold keys are bare keys.
+    var acceptsModifiers: Bool {
+        switch self {
+        case .scrollTrigger, .zoomTrigger, .gestureTrigger, .threeDTrigger: return true
+        case .autoMouseButton, .autoMouseHoldKey: return false
+        }
+    }
+}
+
+/// What a trigger key starts.
+enum TriggerAction: Equatable {
+    case scroll
+    case zoom
+    case gesture
+    case threeD(ThreeDAction)
 }
 
 @MainActor
@@ -165,16 +181,6 @@ final class AppSettings: ObservableObject {
     /// settings change in the app.
     static let configFileURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/ballgesture/config.json")
-
-    static let defaultScrollTriggerKeyCode = ConfigValues.defaultScrollTriggerKeyCode
-    static let defaultZoomTriggerKeyCode = ConfigValues.defaultZoomTriggerKeyCode
-    static let defaultGestureTriggerKeyCode = ConfigValues.defaultGestureTriggerKeyCode
-    static func defaultThreeDTriggerKeyCode(_ action: ThreeDAction) -> Int64 {
-        ConfigValues.defaultThreeDTriggerKeyCode(action)
-    }
-    static func defaultAutoMouseKeyCode(_ button: AutoMouseButton) -> Int64 {
-        ConfigValues.defaultAutoMouseKeyCode(button)
-    }
 
     private static let unparseableMessage =
         "config.json is not valid JSON; keeping the current settings and not saving changes until it is fixed."
@@ -231,19 +237,19 @@ final class AppSettings: ObservableObject {
         didSet { scheduleSave() }
     }
 
-    @Published private(set) var scrollTriggerKeyCode: Int64 {
+    @Published private(set) var scrollTriggers: [KeyBinding] {
         didSet { scheduleSave() }
     }
 
-    @Published private(set) var zoomTriggerKeyCode: Int64 {
+    @Published private(set) var zoomTriggers: [KeyBinding] {
         didSet { scheduleSave() }
     }
 
-    @Published private(set) var gestureTriggerKeyCode: Int64 {
+    @Published private(set) var gestureTriggers: [KeyBinding] {
         didSet { scheduleSave() }
     }
 
-    @Published private(set) var threeDTriggerKeyCodes: [ThreeDAction: Int64] {
+    @Published private(set) var threeDTriggers: [ThreeDAction: [KeyBinding]] {
         didSet { scheduleSave() }
     }
 
@@ -261,14 +267,14 @@ final class AppSettings: ObservableObject {
         didSet { scheduleSave() }
     }
 
-    @Published private(set) var autoMouseKeyCodes: [AutoMouseButton: Int64] {
+    @Published private(set) var autoMouseKeys: [AutoMouseButton: [KeyBinding]] {
         didSet { scheduleSave() }
     }
 
     /// A second key per button, usually a modifier, for keyboards whose
     /// layer key sends a modifier when held (home row mods): the key itself
     /// arrives only when tapped, so holding it to drag needs the modifier.
-    @Published private(set) var autoMouseHoldKeyCodes: [AutoMouseButton: Int64] {
+    @Published private(set) var autoMouseHoldKeys: [AutoMouseButton: [KeyBinding]] {
         didSet { scheduleSave() }
     }
 
@@ -313,15 +319,15 @@ final class AppSettings: ObservableObject {
         threeDDefaultProfile = values.threeDDefaultProfile
         threeDAppProfiles = values.threeDAppProfiles
         zoomMethod = values.zoomMethod
-        scrollTriggerKeyCode = values.scrollTriggerKeyCode
-        zoomTriggerKeyCode = values.zoomTriggerKeyCode
-        gestureTriggerKeyCode = values.gestureTriggerKeyCode
-        threeDTriggerKeyCodes = values.threeDTriggerKeyCodes
+        scrollTriggers = values.scrollTriggers
+        zoomTriggers = values.zoomTriggers
+        gestureTriggers = values.gestureTriggers
+        threeDTriggers = values.threeDTriggers
         autoMouseEnabled = values.autoMouseEnabled
         autoMouseDevice = values.autoMouseDevice
         autoMouseTimeout = values.autoMouseTimeout
-        autoMouseKeyCodes = values.autoMouseKeyCodes
-        autoMouseHoldKeyCodes = values.autoMouseHoldKeyCodes
+        autoMouseKeys = values.autoMouseKeys
+        autoMouseHoldKeys = values.autoMouseHoldKeys
 
         setConfigProblems(problems)
         if needsWrite { saveNow() }
@@ -353,15 +359,15 @@ final class AppSettings: ObservableObject {
         values.threeDDefaultProfile = threeDDefaultProfile
         values.threeDAppProfiles = threeDAppProfiles
         values.zoomMethod = zoomMethod
-        values.scrollTriggerKeyCode = scrollTriggerKeyCode
-        values.zoomTriggerKeyCode = zoomTriggerKeyCode
-        values.gestureTriggerKeyCode = gestureTriggerKeyCode
-        values.threeDTriggerKeyCodes = threeDTriggerKeyCodes
+        values.scrollTriggers = scrollTriggers
+        values.zoomTriggers = zoomTriggers
+        values.gestureTriggers = gestureTriggers
+        values.threeDTriggers = threeDTriggers
         values.autoMouseEnabled = autoMouseEnabled
         values.autoMouseDevice = autoMouseDevice
         values.autoMouseTimeout = autoMouseTimeout
-        values.autoMouseKeyCodes = autoMouseKeyCodes
-        values.autoMouseHoldKeyCodes = autoMouseHoldKeyCodes
+        values.autoMouseKeys = autoMouseKeys
+        values.autoMouseHoldKeys = autoMouseHoldKeys
         return values
     }
 
@@ -385,15 +391,15 @@ final class AppSettings: ObservableObject {
         if threeDDefaultProfile != values.threeDDefaultProfile { threeDDefaultProfile = values.threeDDefaultProfile }
         if threeDAppProfiles != values.threeDAppProfiles { threeDAppProfiles = values.threeDAppProfiles }
         if zoomMethod != values.zoomMethod { zoomMethod = values.zoomMethod }
-        if scrollTriggerKeyCode != values.scrollTriggerKeyCode { scrollTriggerKeyCode = values.scrollTriggerKeyCode }
-        if zoomTriggerKeyCode != values.zoomTriggerKeyCode { zoomTriggerKeyCode = values.zoomTriggerKeyCode }
-        if gestureTriggerKeyCode != values.gestureTriggerKeyCode { gestureTriggerKeyCode = values.gestureTriggerKeyCode }
-        if threeDTriggerKeyCodes != values.threeDTriggerKeyCodes { threeDTriggerKeyCodes = values.threeDTriggerKeyCodes }
+        if scrollTriggers != values.scrollTriggers { scrollTriggers = values.scrollTriggers }
+        if zoomTriggers != values.zoomTriggers { zoomTriggers = values.zoomTriggers }
+        if gestureTriggers != values.gestureTriggers { gestureTriggers = values.gestureTriggers }
+        if threeDTriggers != values.threeDTriggers { threeDTriggers = values.threeDTriggers }
         if autoMouseEnabled != values.autoMouseEnabled { autoMouseEnabled = values.autoMouseEnabled }
         if autoMouseDevice != values.autoMouseDevice { autoMouseDevice = values.autoMouseDevice }
         if autoMouseTimeout != values.autoMouseTimeout { autoMouseTimeout = values.autoMouseTimeout }
-        if autoMouseKeyCodes != values.autoMouseKeyCodes { autoMouseKeyCodes = values.autoMouseKeyCodes }
-        if autoMouseHoldKeyCodes != values.autoMouseHoldKeyCodes { autoMouseHoldKeyCodes = values.autoMouseHoldKeyCodes }
+        if autoMouseKeys != values.autoMouseKeys { autoMouseKeys = values.autoMouseKeys }
+        if autoMouseHoldKeys != values.autoMouseHoldKeys { autoMouseHoldKeys = values.autoMouseHoldKeys }
     }
 
     /// Called when the file changed on disk. A file that stops parsing
@@ -441,31 +447,53 @@ final class AppSettings: ObservableObject {
 
     // MARK: - Lookups
 
-    func autoMouseKeyCode(for button: AutoMouseButton) -> Int64 {
-        autoMouseKeyCodes[button] ?? Self.defaultAutoMouseKeyCode(button)
+    func autoMouseKeys(for button: AutoMouseButton) -> [KeyBinding] {
+        autoMouseKeys[button] ?? ConfigValues.defaultAutoMouseKeys(button)
     }
 
     /// The mouse button `keyCode` turns into while the auto mouse layer is on, if any.
     func autoMouseButton(forKeyCode keyCode: Int64) -> AutoMouseButton? {
-        AutoMouseButton.allCases.first { autoMouseKeyCode(for: $0) == keyCode }
+        AutoMouseButton.allCases.first { button in autoMouseKeys(for: button).contains { $0.keyCode == keyCode } }
     }
 
     /// The mouse button holding `keyCode` presses while the auto mouse layer is on, if any.
     func autoMouseButton(forHoldKeyCode keyCode: Int64) -> AutoMouseButton? {
-        AutoMouseButton.allCases.first { autoMouseHoldKeyCodes[$0] == keyCode }
+        AutoMouseButton.allCases.first { button in
+            autoMouseHoldKeys[button]?.contains { $0.keyCode == keyCode } ?? false
+        }
     }
 
     func clearAutoMouseHoldKey(for button: AutoMouseButton) {
-        autoMouseHoldKeyCodes[button] = nil
+        autoMouseHoldKeys[button] = []
     }
 
-    func threeDTriggerKeyCode(for action: ThreeDAction) -> Int64 {
-        threeDTriggerKeyCodes[action] ?? Self.defaultThreeDTriggerKeyCode(action)
+    func threeDTriggers(for action: ThreeDAction) -> [KeyBinding] {
+        threeDTriggers[action] ?? ConfigValues.defaultThreeDTriggers(action)
     }
 
-    /// The 3D action bound to `keyCode`, if any.
-    func threeDAction(forKeyCode keyCode: Int64) -> ThreeDAction? {
-        ThreeDAction.allCases.first { threeDTriggerKeyCode(for: $0) == keyCode }
+    private var triggerBindings: [(TriggerAction, [KeyBinding])] {
+        [(.scroll, scrollTriggers), (.zoom, zoomTriggers), (.gesture, gestureTriggers)]
+            + ThreeDAction.allCases.map { (.threeD($0), threeDTriggers(for: $0)) }
+    }
+
+    /// Every key code that starts some trigger.
+    var triggerKeyCodes: Set<Int64> {
+        Set(triggerBindings.flatMap { $0.1.map(\.keyCode) })
+    }
+
+    /// The action a key press starts. A binding matches when its key is
+    /// pressed and its modifiers are among those held, so a bare key works
+    /// with any modifiers down; the binding with the most modifiers wins.
+    func triggerAction(forKeyCode keyCode: Int64, modifiers: KeyBinding.Modifiers) -> TriggerAction? {
+        var best: (action: TriggerAction, count: Int)?
+        for (action, bindings) in triggerBindings {
+            for binding in bindings where binding.keyCode == keyCode && modifiers.isSuperset(of: binding.modifiers) {
+                if best == nil || binding.modifiers.count > best!.count {
+                    best = (action, binding.modifiers.count)
+                }
+            }
+        }
+        return best?.action
     }
 
     /// The profile for `bundleID`, falling back to the default profile.
@@ -490,9 +518,10 @@ final class AppSettings: ObservableObject {
     }
 
     /// Called by GestureEngine when a key was pressed while capturing.
+    /// `modifiers` are the ones held with it; only trigger targets keep them.
     /// Returns true if the key was consumed (i.e. we were capturing).
     @discardableResult
-    func handleCapturedKeyCode(_ keyCode: Int64) -> Bool {
+    func handleCapturedKeyCode(_ keyCode: Int64, modifiers: KeyBinding.Modifiers = []) -> Bool {
         guard let target = captureTarget else { return false }
 
         // The config file stores keys by name, so a key without one could not be saved.
@@ -502,21 +531,25 @@ final class AppSettings: ObservableObject {
             return true
         }
 
-        let assignedKeys: [(KeyCaptureTarget, Int64, String)] = [
-            (.scrollTrigger, scrollTriggerKeyCode, "Scroll Mode"),
-            (.zoomTrigger, zoomTriggerKeyCode, "Zoom Mode"),
-            (.gestureTrigger, gestureTriggerKeyCode, "Gesture Mode")
-        ] + ThreeDAction.allCases.map {
-            (.threeDTrigger($0), threeDTriggerKeyCode(for: $0), "CAD \($0.displayName)")
-        } + AutoMouseButton.allCases.map {
-            (.autoMouseButton($0), autoMouseKeyCode(for: $0), $0.displayName)
-        } + AutoMouseButton.allCases.compactMap { button in
-            autoMouseHoldKeyCodes[button].map { (.autoMouseHoldKey(button), $0, "\(button.displayName) (Held)") }
-        }
-        let otherKeys = assignedKeys.filter { $0.0 != target }
+        let binding = KeyBinding(
+            keyCode: keyCode,
+            modifiers: target.acceptsModifiers && !KeyCodeNaming.isModifierKey(keyCode) ? modifiers : []
+        )
 
-        for (_, otherKeyCode, otherName) in otherKeys {
-            if keyCode == otherKeyCode {
+        let assignedKeys: [(KeyCaptureTarget, [KeyBinding], String)] = [
+            (.scrollTrigger, scrollTriggers, "Scroll Mode"),
+            (.zoomTrigger, zoomTriggers, "Zoom Mode"),
+            (.gestureTrigger, gestureTriggers, "Gesture Mode")
+        ] + ThreeDAction.allCases.map {
+            (.threeDTrigger($0), threeDTriggers(for: $0), "CAD \($0.displayName)")
+        } + AutoMouseButton.allCases.map {
+            (.autoMouseButton($0), autoMouseKeys(for: $0), $0.displayName)
+        } + AutoMouseButton.allCases.map {
+            (.autoMouseHoldKey($0), autoMouseHoldKeys[$0] ?? [], "\($0.displayName) (Held)")
+        }
+
+        for (otherTarget, otherBindings, otherName) in assignedKeys where otherTarget != target {
+            if otherBindings.contains(binding) {
                 captureErrorMessage = "That key is already assigned to \(otherName). Choose a different key."
                 captureTarget = nil
                 return true
@@ -524,12 +557,12 @@ final class AppSettings: ObservableObject {
         }
 
         switch target {
-        case .scrollTrigger: scrollTriggerKeyCode = keyCode
-        case .zoomTrigger: zoomTriggerKeyCode = keyCode
-        case .gestureTrigger: gestureTriggerKeyCode = keyCode
-        case .threeDTrigger(let action): threeDTriggerKeyCodes[action] = keyCode
-        case .autoMouseButton(let button): autoMouseKeyCodes[button] = keyCode
-        case .autoMouseHoldKey(let button): autoMouseHoldKeyCodes[button] = keyCode
+        case .scrollTrigger: scrollTriggers = [binding]
+        case .zoomTrigger: zoomTriggers = [binding]
+        case .gestureTrigger: gestureTriggers = [binding]
+        case .threeDTrigger(let action): threeDTriggers[action] = [binding]
+        case .autoMouseButton(let button): autoMouseKeys[button] = [binding]
+        case .autoMouseHoldKey(let button): autoMouseHoldKeys[button] = [binding]
         }
         captureErrorMessage = nil
         captureTarget = nil

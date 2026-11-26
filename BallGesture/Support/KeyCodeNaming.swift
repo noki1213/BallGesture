@@ -82,6 +82,12 @@ enum KeyCodeNaming {
         uniquingKeysWith: { first, _ in first }
     )
 
+    /// Keys that only change modifier state, so they never carry a modifier prefix.
+    static func isModifierKey(_ keyCode: Int64) -> Bool {
+        [kVK_Control, kVK_RightControl, kVK_Option, kVK_RightOption, kVK_Command, kVK_RightCommand,
+         kVK_Shift, kVK_RightShift, kVK_CapsLock, kVK_Function].contains(Int(keyCode))
+    }
+
     static func displayName(for keyCode: Int64) -> String {
         byKeyCode[keyCode]?.displayName ?? "Key \(keyCode)"
     }
