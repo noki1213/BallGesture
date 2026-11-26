@@ -258,6 +258,23 @@ final class GestureEngine: ObservableObject {
                 self?.updatePointingMonitor(enabled: enabled, device: device)
             }
             .store(in: &cancellables)
+        // Receiving on the next main-queue turn lets @Published finish
+        // updating (it emits before the new value is stored), so the modes
+        // end against the final state.
+        settings.$isEnabled
+            .removeDuplicates()
+            .filter { !$0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    // With the engine off, a held trigger's keyUp passes
+                    // through untouched, so the modes must end here or the
+                    // cursor would stay pinned.
+                    self?.endActiveModesIfNeeded()
+                    self?.swallowedKeyDowns.removeAll()
+                }
+            }
+            .store(in: &cancellables)
         settings.$threeDAppProfiles
             .sink { [weak self] profiles in
                 self?.shiftScrollReversedBundleIDs = Set(
