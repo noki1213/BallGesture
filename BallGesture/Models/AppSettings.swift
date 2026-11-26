@@ -326,6 +326,16 @@ final class AppSettings: ObservableObject {
         setConfigProblems(problems)
         if needsWrite { saveNow() }
         configFile.startWatching { [weak self] in self?.reloadConfig() }
+        // A change made just before quitting would otherwise die with the
+        // pending deferred write.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isSaveScheduled else { return }
+                self.saveNow()
+            }
+        }
     }
 
     // MARK: - Config file
@@ -409,7 +419,9 @@ final class AppSettings: ObservableObject {
         isSaveScheduled = true
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 200_000_000)
-            self?.saveNow()
+            // A flush (e.g. at quit) may already have written this change.
+            guard let self, self.isSaveScheduled else { return }
+            self.saveNow()
         }
     }
 
