@@ -201,7 +201,7 @@ struct ConfigValues: Equatable {
         for button in AutoMouseButton.allCases {
             autoMouseKeys[button] = reader.bindings(
                 mouseKeys, button.rawValue, path: "mouseLayer.keys.\(button.rawValue)",
-                default: Self.defaultAutoMouseKeys(button), allowModifiers: false, allowEmpty: false
+                default: Self.defaultAutoMouseKeys(button), allowModifiers: false, allowEmpty: true
             )
             autoMouseHoldKeys[button] = reader.bindings(
                 holdKeys, button.rawValue, path: "mouseLayer.holdKeys.\(button.rawValue)",
