@@ -364,17 +364,13 @@ final class GestureEngine: ObservableObject {
     func endActiveModesIfNeeded() {
         cancelFlickDetection()
         if scrollActive {
-            reassociateCursor()
-            scrollActive = false
+            endScrollMode(reason: "modes ended")
         }
         if zoomActive {
-            postZoomEvent(phase: .ended, magnification: 0)
-            reassociateCursor()
-            zoomActive = false
+            endZoomMode(reason: "modes ended")
         }
         if gestureActive {
-            reassociateCursor()
-            gestureActive = false
+            endGestureMode(reason: "modes ended")
         }
         if threeDSession != nil {
             endThreeDMode(reason: "app terminating")
