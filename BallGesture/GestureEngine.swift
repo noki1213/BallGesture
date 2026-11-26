@@ -360,21 +360,6 @@ final class GestureEngine: ObservableObject {
         }
     }
 
-    func stop() {
-        endActiveModesIfNeeded()
-        retryTimer?.invalidate()
-        retryTimer = nil
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-        }
-        eventTap = nil
-        runLoopSource = nil
-        tapStatus = .notStarted
-    }
-
     /// Ends every active mode (scroll, zoom, gesture, 3D, momentum, layer) so
     /// the cursor is never left detached from the mouse and an in-progress
     /// pinch gesture is always closed out. Called at app termination and when
